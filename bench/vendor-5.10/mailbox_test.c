@@ -8,6 +8,8 @@
 #include "rpmsg.h"
 #include <unistd.h>
 
+#define TC_TRANSFER_COUNT 26
+
 struct msg_data {
     char databuf[45];
 };
@@ -43,7 +45,7 @@ int main()
     }
 
     /* send data to remote device */ 
-    for (int i = 0; i < 26; i++)
+    for (int i = 0; i < TC_TRANSFER_COUNT; i++)
     {
         status = write(fd_ept, test_arr[i], sizeof(char) * 45);
         if (status) {
@@ -52,14 +54,14 @@ int main()
     }  
 
     /* receive data from remote device */
-    for (int i = 0; i < 26; i++)
+    for (int i = 0; i < TC_TRANSFER_COUNT; i++)
     {    
         status = read(fd_ept, &data_buf.databuf, sizeof(data_buf.databuf));
         if (status) {
             printf("the read status : %d\n", status);
         }
         printf("%s\n",data_buf.databuf);
-    }   
+    }
 
     /* destroy endpoint */
     ioctl(fd_ept, RPMSG_DESTROY_EPT_IOCTL);
