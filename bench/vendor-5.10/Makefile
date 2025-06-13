@@ -20,7 +20,8 @@ LDFLAGS += -L$(SYSROOT)/lib
 LDFLAGS += -L$(SYSROOT)/usr/lib
 LDFLAGS += -lwiringx
 
-SOURCE = $(wildcard *.c)
+#SOURCE = $(wildcard *.c)
+SOURCE = mailbox_pingpong_test.c
 OBJS = $(patsubst %.c,%.o,$(SOURCE))
 
 $(TARGET): $(OBJS)
