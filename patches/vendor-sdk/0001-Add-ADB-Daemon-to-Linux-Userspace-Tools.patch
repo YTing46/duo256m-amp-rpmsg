@@ -1,0 +1,59 @@
+From 072301d6cec6c37d704a2e0ac8dc5f46e90beb93 Mon Sep 17 00:00:00 2001
+From: HenryChaing <n96121210@gs.ncku.edu.tw>
+Date: Sun, 15 Jun 2025 23:02:06 +0800
+Subject: [PATCH 01/11] Add ADB Daemon to Linux Userspace Tools
+
+The Android Debug Bridge (ADBD) daemon has been added to the Buildroot
+configuration, allowing a host ADB client to connect and open a shell
+on the Milk-V device.
+---
+ buildroot/configs/milkv-duo256m-musl-riscv64-sd_defconfig   | 2 ++
+ device/generic/br_overlay/common/etc/run_usb.sh             | 3 +++
+ .../generic/rootfs_overlay/duo256m/mnt/system/usb-rndis.sh  | 6 ++++--
+ 3 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/buildroot/configs/milkv-duo256m-musl-riscv64-sd_defconfig b/buildroot/configs/milkv-duo256m-musl-riscv64-sd_defconfig
+index a06b734a6..4d2473d25 100644
+--- a/buildroot/configs/milkv-duo256m-musl-riscv64-sd_defconfig
++++ b/buildroot/configs/milkv-duo256m-musl-riscv64-sd_defconfig
+@@ -90,3 +90,5 @@ BR2_TARGET_ROOTFS_EXT2_4=y
+ BR2_TARGET_ROOTFS_EXT2_SIZE="786432K"
+ BR2_TARGET_ROOTFS_TAR_XZ=y
+ BR2_PACKAGE_HOST_GENIMAGE=y
++BR2_PACKAGE_ANDROID_TOOLS=y
++BR2_PACKAGE_ANDROID_TOOLS_ADBD=y
+\ No newline at end of file
+diff --git a/device/generic/br_overlay/common/etc/run_usb.sh b/device/generic/br_overlay/common/etc/run_usb.sh
+index 91e1f5cd0..9d4c8408f 100755
+--- a/device/generic/br_overlay/common/etc/run_usb.sh
++++ b/device/generic/br_overlay/common/etc/run_usb.sh
+@@ -258,6 +258,9 @@ start() {
+     if [ -f $ADBD_PATH/adbd ]; then
+ 	$ADBD_PATH/adbd &
+     fi
++    UDC=`ls /sys/class/udc/ | awk '{print $1}'`
++    echo ${UDC} >$CVI_GADGET/UDC
++    echo ${UDC} >$CVI_GADGET/UDC
+   else
+     # Start the gadget driver
+     UDC=`ls /sys/class/udc/ | awk '{print $1}'`
+diff --git a/device/generic/rootfs_overlay/duo256m/mnt/system/usb-rndis.sh b/device/generic/rootfs_overlay/duo256m/mnt/system/usb-rndis.sh
+index e0f132b3a..6ea44aca2 100755
+--- a/device/generic/rootfs_overlay/duo256m/mnt/system/usb-rndis.sh
++++ b/device/generic/rootfs_overlay/duo256m/mnt/system/usb-rndis.sh
+@@ -1,8 +1,10 @@
+ #!/bin/sh
+ 
+ /etc/uhubon.sh device >> /tmp/rndis.log 2>&1
+-/etc/run_usb.sh probe rndis >> /tmp/rndis.log 2>&1
+-/etc/run_usb.sh start rndis >> /tmp/rndis.log 2>&1
++/etc/run_usb.sh probe adb >> /tmp/rndis.log 2>&1
++/etc/run_usb.sh start adb >> /tmp/rndis.log 2>&1
++/etc/run_usb.sh probe adb >> /tmp/rndis.log 2>&1
++/etc/run_usb.sh start adb >> /tmp/rndis.log 2>&1
+ 
+ sleep 0.5
+ ifconfig usb0 192.168.42.1
+-- 
+2.43.0
+
