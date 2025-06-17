@@ -1,0 +1,49 @@
+From fb753839d09a8e6549ec156fa7c878faba30b5ff Mon Sep 17 00:00:00 2001
+From: HenryChaing <n96121210@gs.ncku.edu.tw>
+Date: Tue, 17 Jun 2025 22:47:46 +0800
+Subject: [PATCH 02/11] Add ThreadX as Git Submodule
+
+Integrated the ThreadX RTOS to run on the C906L core as a git submodule.
+The Buildroot SDK build flow has been updated to compile ThreadX
+(without FreeRTOS) as the secondary operating system.
+---
+ .gitmodules             | 3 +++
+ build/envsetup_milkv.sh | 3 ++-
+ threadx                 | 1 +
+ 3 files changed, 6 insertions(+), 1 deletion(-)
+ create mode 100644 .gitmodules
+ create mode 160000 threadx
+
+diff --git a/.gitmodules b/.gitmodules
+new file mode 100644
+index 000000000..605cdee00
+--- /dev/null
++++ b/.gitmodules
+@@ -0,0 +1,3 @@
++[submodule "threadx"]
++	path = threadx
++	url = git@github.com:HenryChaing/ThreadX-to-RISC-V64.git
+diff --git a/build/envsetup_milkv.sh b/build/envsetup_milkv.sh
+index 11a6d6876..ffe4262cc 100644
+--- a/build/envsetup_milkv.sh
++++ b/build/envsetup_milkv.sh
+@@ -765,7 +765,8 @@ function cvi_setup_env()
+   FSBL_PATH="$TOP_DIR"/fsbl
+   ATF_PATH="$TOP_DIR"/arm-trusted-firmware
+   UBOOT_PATH="$TOP_DIR/$UBOOT_SRC"
+-  FREERTOS_PATH="$TOP_DIR"/freertos
++  # FREERTOS_PATH="$TOP_DIR"/freertos
++  FREERTOS_PATH="$TOP_DIR"/threadx
+   ALIOS_PATH="$TOP_DIR"/alios
+   KERNEL_PATH="$TOP_DIR"/"$KERNEL_SRC"
+   OSDRV_PATH="$TOP_DIR"/osdrv
+diff --git a/threadx b/threadx
+new file mode 160000
+index 000000000..94c97794c
+--- /dev/null
++++ b/threadx
+@@ -0,0 +1 @@
++Subproject commit 94c97794c646efeadfe7f51a7e9123de40f2015f
+-- 
+2.43.0
+
