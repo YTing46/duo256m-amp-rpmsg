@@ -28,7 +28,11 @@ int main()
     ioctl(fd, RPMSG_CREATE_EPT_IOCTL, &ept_info);  // /dev/rpmsg0 is created 
 
     /* create endpoint */
+        /* create endpoint */
     int fd_ept = open("/dev/rpmsg0", O_RDWR); // backend creates endpoint
+    if (fd_ept < 0) {
+        fd_ept = open("/dev/rpmsg1", O_RDWR);
+    }
     
     THE_MESSAGE r5_data = {.DATA = 0};
     int period[] = {1000,3000,7000,500};

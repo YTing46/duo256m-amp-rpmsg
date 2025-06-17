@@ -31,6 +31,9 @@ int main()
 
     /* create endpoint */
     int fd_ept = open("/dev/rpmsg0", O_RDWR); // backend creates endpoint
+    if (fd_ept < 0) {
+        fd_ept = open("/dev/rpmsg1", O_RDWR);
+    }
     
     THE_MESSAGE r5_data = {.DATA = 0};
     

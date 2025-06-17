@@ -14,26 +14,34 @@ endif
 
 CC = $(TOOLCHAIN_PREFIX)gcc
 
-# CFLAGS += -I$(SYSROOT)/usr/include
+# Define the source files and their corresponding targets
+PINGPONG_SRC = mailbox_pingpong_test.c
+PINGPONG_TARGET = mailbox_pingpong
+PINGPONG_OBJ = $(PINGPONG_SRC:.c=.o) # This generates mailbox_pingpong_test.o
 
-# LDFLAGS += -L$(SYSROOT)/lib
-# LDFLAGS += -L$(SYSROOT)/usr/lib
-# LDFLAGS += -lwiringx
+LED_SRC = mailbox_led_test.c
+LED_TARGET = mailbox_led
+LED_OBJ = $(LED_SRC:.c=.o) # This generates mailbox_led_test.o
 
-#SOURCE = $(wildcard *.c)
-# SOURCE = mailbox_pingpong_test.c
-SOURCE = mailbox_led_test.c
-OBJS = $(patsubst %.c,%.o,$(SOURCE))
+# Define an 'all' target to build both by default
+.PHONY: all
+all: $(PINGPONG_TARGET) $(LED_TARGET)
 
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+# Rule to build the pingpong test executable
+$(PINGPONG_TARGET): $(PINGPONG_OBJ)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+# Rule to build the led test executable
+$(LED_TARGET): $(LED_OBJ)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
+# Generic rule to compile .c files into .o files
+# This rule will apply to both pingpong and led source files
 %.o: %.c
-	$(CC) $(CFLAGS) -o $@ -c $<
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 .PHONY: clean
 clean:
-	@rm *.o -rf
-	@rm $(OBJS) -rf
-	@rm $(TARGET)
+	@rm -f $(PINGPONG_OBJ) $(LED_OBJ)
+	@rm -f $(PINGPONG_TARGET) $(LED_TARGET)
 
