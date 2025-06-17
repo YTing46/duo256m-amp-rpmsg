@@ -14,11 +14,11 @@ endif
 
 CC = $(TOOLCHAIN_PREFIX)gcc
 
-CFLAGS += -I$(SYSROOT)/usr/include
+# CFLAGS += -I$(SYSROOT)/usr/include
 
-LDFLAGS += -L$(SYSROOT)/lib
-LDFLAGS += -L$(SYSROOT)/usr/lib
-LDFLAGS += -lwiringx
+# LDFLAGS += -L$(SYSROOT)/lib
+# LDFLAGS += -L$(SYSROOT)/usr/lib
+# LDFLAGS += -lwiringx
 
 #SOURCE = $(wildcard *.c)
 SOURCE = mailbox_pingpong_test.c
