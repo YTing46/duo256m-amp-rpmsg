@@ -21,7 +21,8 @@ CC = $(TOOLCHAIN_PREFIX)gcc
 # LDFLAGS += -lwiringx
 
 #SOURCE = $(wildcard *.c)
-SOURCE = mailbox_pingpong_test.c
+# SOURCE = mailbox_pingpong_test.c
+SOURCE = mailbox_led_test.c
 OBJS = $(patsubst %.c,%.o,$(SOURCE))
 
 $(TARGET): $(OBJS)
