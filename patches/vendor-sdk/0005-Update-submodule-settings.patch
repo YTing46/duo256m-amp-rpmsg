@@ -1,0 +1,31 @@
+From 4235e452c55f4a01b1db835ef2d72b1532eae892 Mon Sep 17 00:00:00 2001
+From: HenryChaing <n96121210@gs.ncku.edu.tw>
+Date: Thu, 19 Jun 2025 15:29:17 +0800
+Subject: [PATCH 05/11] Update submodule settings
+
+switch ThreadX to latest amp branch and use HTTPS URL.
+---
+ .gitmodules | 3 ++-
+ threadx     | 2 +-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/.gitmodules b/.gitmodules
+index 605cdee00..adea5644a 100644
+--- a/.gitmodules
++++ b/.gitmodules
+@@ -1,3 +1,4 @@
+ [submodule "threadx"]
+ 	path = threadx
+-	url = git@github.com:HenryChaing/ThreadX-to-RISC-V64.git
++	branch = amp
++	url = https://github.com/HenryChaing/ThreadX-to-RISC-V64.git
+diff --git a/threadx b/threadx
+index 94c97794c..e25596bce 160000
+--- a/threadx
++++ b/threadx
+@@ -1 +1 @@
+-Subproject commit 94c97794c646efeadfe7f51a7e9123de40f2015f
++Subproject commit e25596bce5776c20421134b53e5fededaf1d54d3
+-- 
+2.43.0
+
