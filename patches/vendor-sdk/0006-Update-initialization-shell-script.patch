@@ -1,0 +1,82 @@
+From 06617a0a638489a96cef9eba04fdcf24ac9838d8 Mon Sep 17 00:00:00 2001
+From: HenryChaing <n96121210@gs.ncku.edu.tw>
+Date: Thu, 19 Jun 2025 17:45:19 +0800
+Subject: [PATCH 06/11] Update initialization shell script
+
+These scripts operates under /mnt/system/, modifying the behavior of the
+USB gadget and GPIO.The USB gadget is now configured for use with
+ADBD (Android Debug Bridge daemon),and control of the LED GPIO
+has been removed from the script.
+---
+ .../rootfs_overlay/common/mnt/system/usb.sh      |  2 +-
+ .../rootfs_overlay/duo256m/mnt/system/blink.sh   |  2 +-
+ .../rootfs_overlay/duo256m/mnt/system/usb-adb.sh | 16 ++++++++++++++++
+ .../duo256m/mnt/system/usb-rndis.sh              |  7 +++----
+ 4 files changed, 21 insertions(+), 6 deletions(-)
+ create mode 100755 device/generic/rootfs_overlay/duo256m/mnt/system/usb-adb.sh
+
+diff --git a/device/generic/rootfs_overlay/common/mnt/system/usb.sh b/device/generic/rootfs_overlay/common/mnt/system/usb.sh
+index f947e921e..66459aa2c 120000
+--- a/device/generic/rootfs_overlay/common/mnt/system/usb.sh
++++ b/device/generic/rootfs_overlay/common/mnt/system/usb.sh
+@@ -1 +1 @@
+-usb-ncm.sh
+\ No newline at end of file
++usb-adb.sh
+\ No newline at end of file
+diff --git a/device/generic/rootfs_overlay/duo256m/mnt/system/blink.sh b/device/generic/rootfs_overlay/duo256m/mnt/system/blink.sh
+index 0670e77b6..79a3a5ec0 100755
+--- a/device/generic/rootfs_overlay/duo256m/mnt/system/blink.sh
++++ b/device/generic/rootfs_overlay/duo256m/mnt/system/blink.sh
+@@ -12,7 +12,7 @@ fi
+ 
+ echo out > ${LED_GPIO}/direction
+ 
+-while true; do
++while false; do
+     echo 0 > ${LED_GPIO}/value
+     sleep 0.5
+     echo 1 > ${LED_GPIO}/value
+diff --git a/device/generic/rootfs_overlay/duo256m/mnt/system/usb-adb.sh b/device/generic/rootfs_overlay/duo256m/mnt/system/usb-adb.sh
+new file mode 100755
+index 000000000..6ea44aca2
+--- /dev/null
++++ b/device/generic/rootfs_overlay/duo256m/mnt/system/usb-adb.sh
+@@ -0,0 +1,16 @@
++#!/bin/sh
++
++/etc/uhubon.sh device >> /tmp/rndis.log 2>&1
++/etc/run_usb.sh probe adb >> /tmp/rndis.log 2>&1
++/etc/run_usb.sh start adb >> /tmp/rndis.log 2>&1
++/etc/run_usb.sh probe adb >> /tmp/rndis.log 2>&1
++/etc/run_usb.sh start adb >> /tmp/rndis.log 2>&1
++
++sleep 0.5
++ifconfig usb0 192.168.42.1
++
++count=`ps | grep dnsmasq | grep -v grep | wc -l`
++if [ ${count} -lt 1 ] ;then
++  echo "/etc/init.d/S80dnsmasq start" >> /tmp/rndis.log 2>&1
++  /etc/init.d/S80dnsmasq start >> /tmp/rndis.log 2>&1
++fi
+diff --git a/device/generic/rootfs_overlay/duo256m/mnt/system/usb-rndis.sh b/device/generic/rootfs_overlay/duo256m/mnt/system/usb-rndis.sh
+index 6ea44aca2..bba287298 100755
+--- a/device/generic/rootfs_overlay/duo256m/mnt/system/usb-rndis.sh
++++ b/device/generic/rootfs_overlay/duo256m/mnt/system/usb-rndis.sh
+@@ -1,10 +1,9 @@
+ #!/bin/sh
+ 
+ /etc/uhubon.sh device >> /tmp/rndis.log 2>&1
+-/etc/run_usb.sh probe adb >> /tmp/rndis.log 2>&1
+-/etc/run_usb.sh start adb >> /tmp/rndis.log 2>&1
+-/etc/run_usb.sh probe adb >> /tmp/rndis.log 2>&1
+-/etc/run_usb.sh start adb >> /tmp/rndis.log 2>&1
++/etc/run_usb.sh probe rndis >> /tmp/rndis.log 2>&1
++/etc/run_usb.sh start rndis >> /tmp/rndis.log 2>&1
++
+ 
+ sleep 0.5
+ ifconfig usb0 192.168.42.1
+-- 
+2.43.0
+
