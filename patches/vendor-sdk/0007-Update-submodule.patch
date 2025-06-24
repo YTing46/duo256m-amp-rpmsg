@@ -1,0 +1,32 @@
+From 8c095e70fe86c6495ecee7c62fd3cf3d0f8a0b7b Mon Sep 17 00:00:00 2001
+From: HenryChaing <n96121210@gs.ncku.edu.tw>
+Date: Tue, 24 Jun 2025 17:32:13 +0800
+Subject: [PATCH 07/11] Update submodule
+
+Threadx submodule has been updated, referenced by buildroot-sdk amp
+branch.
+---
+ .gitmodules | 2 +-
+ threadx     | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/.gitmodules b/.gitmodules
+index adea5644a..22e399f22 100644
+--- a/.gitmodules
++++ b/.gitmodules
+@@ -1,4 +1,4 @@
+ [submodule "threadx"]
+ 	path = threadx
+-	branch = amp
+ 	url = https://github.com/HenryChaing/ThreadX-to-RISC-V64.git
++	branch = amp
+diff --git a/threadx b/threadx
+index e25596bce..49ad38fbd 160000
+--- a/threadx
++++ b/threadx
+@@ -1 +1 @@
+-Subproject commit e25596bce5776c20421134b53e5fededaf1d54d3
++Subproject commit 49ad38fbd540c9709e322abd38f520218e5beaf9
+-- 
+2.43.0
+
