@@ -8,8 +8,6 @@
 #include "rpmsg.h"
 #include <unistd.h>
 
-#define TC_TRANSFER_COUNT 26
-
 typedef struct the_message
 {
     unsigned int DATA;
@@ -35,23 +33,20 @@ int main()
     }
     
     THE_MESSAGE r5_data = {.DATA = 0};
-    int period[] = {1000,3000,7000,500};
-    
-     
 
     /* receive data from remote device */
-    for (int i = 0; i < sizeof(period)/sizeof(int); i++)
+    for (;;)
     {    
         /* send data to remote device */
-        r5_data.DATA = period[i];
+        scanf("%d",&r5_data.DATA);
+        if (!r5_data.DATA)
+            break;
         write(fd_ept, &r5_data, sizeof(THE_MESSAGE));
         printf("write period: %d\n",r5_data.DATA);
         /* receive data from remote device */
         read(fd_ept, &r5_data, sizeof(THE_MESSAGE));
         printf("read period: %d\n",r5_data.DATA);
-        sleep(12);
     }
-
 
     /* destroy endpoint */
     ioctl(fd_ept, RPMSG_DESTROY_EPT_IOCTL);

@@ -8,7 +8,7 @@
 #include "rpmsg.h"
 #include <unistd.h>
 
-#define TC_TRANSFER_COUNT 26
+#define TC_TRANSFER_COUNT 16
 
 typedef struct the_message
 {
@@ -47,7 +47,7 @@ int main()
     for (int i = 0; i < TC_TRANSFER_COUNT; i++)
     {    
         status = read(fd_ept, &r5_data, sizeof(THE_MESSAGE));
-        printf("r5_data.DATA: %d\n",r5_data.DATA);
+        printf("ThreadX_data.DATA: %d\n",r5_data.DATA);
         status = write(fd_ept, &r5_data, sizeof(THE_MESSAGE));
     }
 
