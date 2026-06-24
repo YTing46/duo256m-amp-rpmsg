@@ -1,0 +1,90 @@
+From 30959d834643e9ef2e9b61b1d3fb9995f5db71fd Mon Sep 17 00:00:00 2001
+From: Jeremy Lu <ja0741187@gmail.com>
+Date: Wed, 24 Jun 2026 23:33:31 +0800
+Subject: [PATCH 09/11] =?UTF-8?q?kernel:=20=E5=8A=A0=20raw=20mtime=20?=
+ =?UTF-8?q?=E6=8E=A2=E9=87=9D=E9=87=8F=E6=B8=AC=20transport?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c | 36 ++++++++++++++++------
+ 1 file changed, 27 insertions(+), 9 deletions(-)
+
+diff --git a/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c b/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c
+index 6e584eab3..04095b11f 100644
+--- a/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c
++++ b/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c
+@@ -46,12 +46,19 @@
+ static u64 g_b1;    /* 即將 kick 小核 */
+ static u64 g_b2;    /* 小核回覆中斷剛進來(IRQ) */
+ static u64 g_b2b;   /* workqueue handler 開始執行 */
++/* 新增(transport 用,raw mtime 版本) */
++static u64 g_b1_raw;     /* 大核 kick 前的 raw mtime */
++static u64 g_b2_raw;     /* 大核回程中斷的 raw mtime */
++
++
+ 
+ /* 讀 /proc/cvi_rpmsg_probe 會拿到 "b1 b2 b2b\n" */
+ static int probe_show(struct seq_file *m, void *v)
+ {
+-	seq_printf(m, "%llu %llu %llu\n", g_b1, g_b2, g_b2b);
+-	return 0;
++    /* 順序: b1 b2 b2b b1_raw b2_raw */
++    seq_printf(m, "%llu %llu %llu %llu %llu\n",
++               g_b1, g_b2, g_b2b, g_b1_raw, g_b2_raw);
++    return 0;
+ }
+ 
+ static int probe_open(struct inode *inode, struct file *file)
+@@ -66,6 +73,15 @@ static const struct proc_ops probe_proc_ops = {
+ 	.proc_release = single_release,
+ };
+ 
++/* === transport 量測:讀 raw CLINT mtime(跟小核 rd_time 同源) === */
++static inline u64 read_raw_mtime(void)
++{
++    u64 t;
++    __asm__ __volatile__ ("rdtime %0" : "=r"(t));	
++    return t;
++}
++
++
+ 
+ struct cvi_virdev {
+ 	struct virtio_device vdev;
+@@ -151,8 +167,10 @@ static bool cvi_rpmsg_notify(struct virtqueue *vq)
+     cmd.param_ptr = mu_rpmsg;
+ 	cmd.cmd_id = queue_id;
+ 
+-	if (rpvq->simple_id == 1)        /* ★ 只記 TX queue 的 notify */
+-		g_b1 = ktime_get_ns();
++	if (rpvq->simple_id == 1) {
++		g_b1     = ktime_get_ns();      /* 原有:RTT 拆解用 */
++		g_b1_raw = read_raw_mtime();    /* 新增:transport 用,跟 s1_raw 同源 */
++	}
+ 	rtos_cmdqu_send(&cmd);
+ 
+ 	
+@@ -340,13 +358,13 @@ static void rpmsg_work_handler(struct work_struct *work)
+ 	cvi_virdev_inst->vq[rtos_cmd_id]->callback(cvi_virdev_inst->vq[rtos_cmd_id]);
+ }
+ 
+-static void rtos_cmdqu_handler(unsigned char cmd_id, unsigned int param_ptr, void* device_id)
++static void rtos_cmdqu_handler(unsigned char cmd_id, ...)
+ {
+-	g_b2 = ktime_get_ns();      /* ★ b2: IRQ 進入 */
+-	rtos_cmd_id = cmd_id;
+-	schedule_delayed_work(&rpmsg_work, 0);
++    g_b2     = ktime_get_ns();      /* 原有 */
++    g_b2_raw = read_raw_mtime();    /* 新增 */
++    rtos_cmd_id = cmd_id;
++    schedule_delayed_work(&rpmsg_work, 0);
+ }
+-
+ static int cvi_rpmsg_probe(struct platform_device *pdev)
+ {
+ 	int i, j, ret = 0;
+-- 
+2.43.0
+
