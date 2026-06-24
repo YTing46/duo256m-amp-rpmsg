@@ -1,0 +1,82 @@
+From 8fd17ca247fea357e3475dddb0b56b24a99879e2 Mon Sep 17 00:00:00 2001
+From: Jeremy Lu <ja0741187@gmail.com>
+Date: Thu, 25 Jun 2026 03:53:23 +0800
+Subject: [PATCH 11/11] kernel analyze more finer
+
+---
+ linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c | 21 ++++++++++++++++++---
+ threadx                                    |  2 +-
+ 2 files changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c b/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c
+index 04095b11f..782306d38 100644
+--- a/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c
++++ b/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c
+@@ -49,15 +49,25 @@ static u64 g_b2b;   /* workqueue handler 開始執行 */
+ /* 新增(transport 用,raw mtime 版本) */
+ static u64 g_b1_raw;     /* 大核 kick 前的 raw mtime */
+ static u64 g_b2_raw;     /* 大核回程中斷的 raw mtime */
++static u64 g_b1_done_raw;  /* 大核 kick 後 raw mtime */
++static u64 g_b2_sched_raw; /* schedule_delayed_work() 後 raw mtime */
++static u64 g_b2b_raw;      /* workqueue handler 開始 raw mtime */
++static u64 g_b_cb_done_raw; /* virtqueue callback 返回 raw mtime */
+ 
+ 
+ 
+ /* 讀 /proc/cvi_rpmsg_probe 會拿到 "b1 b2 b2b\n" */
+ static int probe_show(struct seq_file *m, void *v)
+ {
+-    /* 順序: b1 b2 b2b b1_raw b2_raw */
+-    seq_printf(m, "%llu %llu %llu %llu %llu\n",
+-               g_b1, g_b2, g_b2b, g_b1_raw, g_b2_raw);
++    /*
++     * 前 5 欄維持 decomp4 相容:
++     *   b1_ns b2_ns b2b_ns b1_raw b2_raw
++     * 後 4 欄給 decomp5,全部都是 raw mtime:
++     *   b1_done_raw b2_sched_raw b2b_raw b_cb_done_raw
++     */
++    seq_printf(m, "%llu %llu %llu %llu %llu %llu %llu %llu %llu\n",
++               g_b1, g_b2, g_b2b, g_b1_raw, g_b2_raw,
++               g_b1_done_raw, g_b2_sched_raw, g_b2b_raw, g_b_cb_done_raw);
+     return 0;
+ }
+ 
+@@ -172,6 +182,8 @@ static bool cvi_rpmsg_notify(struct virtqueue *vq)
+ 		g_b1_raw = read_raw_mtime();    /* 新增:transport 用,跟 s1_raw 同源 */
+ 	}
+ 	rtos_cmdqu_send(&cmd);
++	if (rpvq->simple_id == 1)
++		g_b1_done_raw = read_raw_mtime();
+ 
+ 	
+ 	mutex_unlock(&rpvq->rpdev->lock);
+@@ -353,9 +365,11 @@ static volatile int rtos_cmd_id;
+ static void rpmsg_work_handler(struct work_struct *work)
+ {
+ 	g_b2b = ktime_get_ns();     /* ★ b2b: workqueue handler 開始跑 */
++	g_b2b_raw = read_raw_mtime();
+ 	// virtqueue callback
+ 	struct cvi_virdev *cvi_virdev_inst = container_of(vdev_isr, struct cvi_virdev, vdev);
+ 	cvi_virdev_inst->vq[rtos_cmd_id]->callback(cvi_virdev_inst->vq[rtos_cmd_id]);
++	g_b_cb_done_raw = read_raw_mtime();
+ }
+ 
+ static void rtos_cmdqu_handler(unsigned char cmd_id, ...)
+@@ -364,6 +378,7 @@ static void rtos_cmdqu_handler(unsigned char cmd_id, ...)
+     g_b2_raw = read_raw_mtime();    /* 新增 */
+     rtos_cmd_id = cmd_id;
+     schedule_delayed_work(&rpmsg_work, 0);
++    g_b2_sched_raw = read_raw_mtime();
+ }
+ static int cvi_rpmsg_probe(struct platform_device *pdev)
+ {
+diff --git a/threadx b/threadx
+index f0d2c71c7..5bfc09f4f 160000
+--- a/threadx
++++ b/threadx
+@@ -1 +1 @@
+-Subproject commit f0d2c71c711568856fd36fd01790f21b044e5290
++Subproject commit 5bfc09f4f96269aac25a1d244ea2fa7bbd0a1543
+-- 
+2.43.0
+
