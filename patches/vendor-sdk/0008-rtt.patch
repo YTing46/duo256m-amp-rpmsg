@@ -1,0 +1,116 @@
+From 0560ac2efa44df7510c7c0c3bc9f41ae0c32f54d Mon Sep 17 00:00:00 2001
+From: Jeremy Lu <ja0741187@gmail.com>
+Date: Tue, 16 Jun 2026 16:14:08 +0800
+Subject: [PATCH 08/11] rtt
+
+---
+ linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c | 36 ++++++++++++++++++++++
+ remoteproc.sh                              |  7 +++++
+ step_by_step_compilation.sh                |  4 +++
+ 3 files changed, 47 insertions(+)
+ create mode 100644 remoteproc.sh
+ create mode 100644 step_by_step_compilation.sh
+
+diff --git a/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c b/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c
+index e07b54d23..6e584eab3 100644
+--- a/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c
++++ b/linux_5.10/drivers/rpmsg/cvi_rpmsg_shmem.c
+@@ -37,6 +37,35 @@
+ #include <asm-generic/io.h>
+ #include <linux/miscdevice.h>
+ #include "rtos_cmdqu.h"
++#include <linux/ktime.h>
++#include <linux/proc_fs.h>
++#include <linux/seq_file.h>
++#include <linux/uaccess.h>
++
++/* 探針時間戳(ns)。ping-pong 同時只有一筆在飛,用全域即可 */
++static u64 g_b1;    /* 即將 kick 小核 */
++static u64 g_b2;    /* 小核回覆中斷剛進來(IRQ) */
++static u64 g_b2b;   /* workqueue handler 開始執行 */
++
++/* 讀 /proc/cvi_rpmsg_probe 會拿到 "b1 b2 b2b\n" */
++static int probe_show(struct seq_file *m, void *v)
++{
++	seq_printf(m, "%llu %llu %llu\n", g_b1, g_b2, g_b2b);
++	return 0;
++}
++
++static int probe_open(struct inode *inode, struct file *file)
++{
++	return single_open(file, probe_show, NULL);
++}
++
++static const struct proc_ops probe_proc_ops = {
++	.proc_open    = probe_open,
++	.proc_read    = seq_read,
++	.proc_lseek   = seq_lseek,
++	.proc_release = single_release,
++};
++
+ 
+ struct cvi_virdev {
+ 	struct virtio_device vdev;
+@@ -121,8 +150,12 @@ static bool cvi_rpmsg_notify(struct virtqueue *vq)
+ 	struct cmdqu_t cmd = {0};
+     cmd.param_ptr = mu_rpmsg;
+ 	cmd.cmd_id = queue_id;
++
++	if (rpvq->simple_id == 1)        /* ★ 只記 TX queue 的 notify */
++		g_b1 = ktime_get_ns();
+ 	rtos_cmdqu_send(&cmd);
+ 
++	
+ 	mutex_unlock(&rpvq->rpdev->lock);
+ 
+ 	return true;
+@@ -301,6 +334,7 @@ static volatile int rtos_cmd_id;
+ 
+ static void rpmsg_work_handler(struct work_struct *work)
+ {
++	g_b2b = ktime_get_ns();     /* ★ b2b: workqueue handler 開始跑 */
+ 	// virtqueue callback
+ 	struct cvi_virdev *cvi_virdev_inst = container_of(vdev_isr, struct cvi_virdev, vdev);
+ 	cvi_virdev_inst->vq[rtos_cmd_id]->callback(cvi_virdev_inst->vq[rtos_cmd_id]);
+@@ -308,6 +342,7 @@ static void rpmsg_work_handler(struct work_struct *work)
+ 
+ static void rtos_cmdqu_handler(unsigned char cmd_id, unsigned int param_ptr, void* device_id)
+ {
++	g_b2 = ktime_get_ns();      /* ★ b2: IRQ 進入 */
+ 	rtos_cmd_id = cmd_id;
+ 	schedule_delayed_work(&rpmsg_work, 0);
+ }
+@@ -372,6 +407,7 @@ static int cvi_rpmsg_probe(struct platform_device *pdev)
+ 		return -1;
+ 	}
+ 
++	proc_create("cvi_rpmsg_probe", 0444, NULL, &probe_proc_ops);
+ 	return ret;
+ }
+ 
+diff --git a/remoteproc.sh b/remoteproc.sh
+new file mode 100644
+index 000000000..0f6e9ac2c
+--- /dev/null
++++ b/remoteproc.sh
+@@ -0,0 +1,7 @@
++mkdir /lib/firmware/
++cp cvirtos.elf /lib/firmware
++echo cvirtos.elf > /sys/class/remoteproc/remoteproc0/firmware
++echo start > /sys/class/remoteproc/remoteproc0/state
++sleep 1
++echo stop > /sys/class/remoteproc/remoteproc0/state
++echo start > /sys/class/remoteproc/remoteproc0/state
+diff --git a/step_by_step_compilation.sh b/step_by_step_compilation.sh
+new file mode 100644
+index 000000000..2a473b4b0
+--- /dev/null
++++ b/step_by_step_compilation.sh
+@@ -0,0 +1,4 @@
++source device/milkv-duo256m-musl-riscv64-sd/boardconfig.sh
++source build/envsetup_milkv.sh
++defconfig sg2002_milkv_duo256m_musl_riscv64_sd
++
+-- 
+2.43.0
+

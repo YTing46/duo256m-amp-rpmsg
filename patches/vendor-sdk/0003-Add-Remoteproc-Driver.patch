@@ -1,0 +1,251 @@
+From 969a98d9c1e18276797e53239cea4e0c3d01683f Mon Sep 17 00:00:00 2001
+From: HenryChaing <n96121210@gs.ncku.edu.tw>
+Date: Tue, 17 Jun 2025 23:12:43 +0800
+Subject: [PATCH 03/11] Add Remoteproc Driver
+
+The Remoteproc driver for Milk-V enables loading executable files to
+the C906L core and provides the ability to reset the core as part of
+the boot process.
+---
+ ...02_milkv_duo256m_musl_riscv64_sd_defconfig |   3 +
+ .../default/dts/cv181x/cv181x_base.dtsi       |   9 +-
+ linux_5.10/drivers/remoteproc/Kconfig         |   7 +
+ linux_5.10/drivers/remoteproc/Makefile        |   1 +
+ .../remoteproc/cvi_sg2002_c906l_remoteproc.c  | 159 ++++++++++++++++++
+ 5 files changed, 178 insertions(+), 1 deletion(-)
+ create mode 100644 linux_5.10/drivers/remoteproc/cvi_sg2002_c906l_remoteproc.c
+
+diff --git a/build/boards/cv181x/sg2002_milkv_duo256m_musl_riscv64_sd/linux/cvitek_sg2002_milkv_duo256m_musl_riscv64_sd_defconfig b/build/boards/cv181x/sg2002_milkv_duo256m_musl_riscv64_sd/linux/cvitek_sg2002_milkv_duo256m_musl_riscv64_sd_defconfig
+index f35aad7ea..82d15d473 100644
+--- a/build/boards/cv181x/sg2002_milkv_duo256m_musl_riscv64_sd/linux/cvitek_sg2002_milkv_duo256m_musl_riscv64_sd_defconfig
++++ b/build/boards/cv181x/sg2002_milkv_duo256m_musl_riscv64_sd/linux/cvitek_sg2002_milkv_duo256m_musl_riscv64_sd_defconfig
+@@ -244,3 +244,6 @@ CONFIG_DYNAMIC_DEBUG=y
+ # CONFIG_RCU_TRACE is not set
+ # CONFIG_FTRACE is not set
+ # CONFIG_RUNTIME_TESTING_MENU is not set
++CONFIG_RESET_CONTROLLER=y
++CONFIG_REMOTEPROC=y
++CONFIG_CVI_REMOTEPROC=y
+\ No newline at end of file
+diff --git a/build/boards/default/dts/cv181x/cv181x_base.dtsi b/build/boards/default/dts/cv181x/cv181x_base.dtsi
+index aef89a8b2..e6318dbd4 100644
+--- a/build/boards/default/dts/cv181x/cv181x_base.dtsi
++++ b/build/boards/default/dts/cv181x/cv181x_base.dtsi
+@@ -33,7 +33,7 @@
+ 	rst: reset-controller {
+ 		#reset-cells = <1>;
+ 		compatible = "cvitek,reset";
+-		reg = <0x0 0x03003000 0x0 0x10>;
++		reg = <0x0 0x03003000 0x0 0x24>;
+ 	};
+ 
+ 	restart: restart-controller {
+@@ -789,6 +789,13 @@
+ 		clock-freq-vip-sys1 = <300000000>;
+ 	};
+ 
++	rproc {
++		compatible = "cvi,sg2002-rproc";
++		reg = <0x0 CVIMMAP_FREERTOS_ADDR 0x0 CVIMMAP_FREERTOS_SIZE>;
++		resets = <&rst 294>;
++		reset-names = "c906l";
++	};
++
+ 	rgn {
+ 		compatible = "cvitek,rgn";
+ 	};
+diff --git a/linux_5.10/drivers/remoteproc/Kconfig b/linux_5.10/drivers/remoteproc/Kconfig
+index d99548fb5..18425612c 100644
+--- a/linux_5.10/drivers/remoteproc/Kconfig
++++ b/linux_5.10/drivers/remoteproc/Kconfig
+@@ -244,6 +244,13 @@ config ST_REMOTEPROC
+ 	  processor framework.
+ 	  This can be either built-in or a loadable module.
+ 
++config CVI_REMOTEPROC
++	tristate "CVI remoteproc support"
++	help
++	  Say y here to support ST's adjunct processors via the remote
++	  processor framework.
++	  This can be either built-in or a loadable module.
++
+ config ST_SLIM_REMOTEPROC
+ 	tristate
+ 
+diff --git a/linux_5.10/drivers/remoteproc/Makefile b/linux_5.10/drivers/remoteproc/Makefile
+index da2ace4ec..57a7034cc 100644
+--- a/linux_5.10/drivers/remoteproc/Makefile
++++ b/linux_5.10/drivers/remoteproc/Makefile
+@@ -34,3 +34,4 @@ obj-$(CONFIG_ST_SLIM_REMOTEPROC)	+= st_slim_rproc.o
+ obj-$(CONFIG_STM32_RPROC)		+= stm32_rproc.o
+ obj-$(CONFIG_TI_K3_DSP_REMOTEPROC)	+= ti_k3_dsp_remoteproc.o
+ obj-$(CONFIG_TI_K3_R5_REMOTEPROC)	+= ti_k3_r5_remoteproc.o
++obj-$(CONFIG_CVI_REMOTEPROC)	+= cvi_sg2002_c906l_remoteproc.o
+diff --git a/linux_5.10/drivers/remoteproc/cvi_sg2002_c906l_remoteproc.c b/linux_5.10/drivers/remoteproc/cvi_sg2002_c906l_remoteproc.c
+new file mode 100644
+index 000000000..66f413399
+--- /dev/null
++++ b/linux_5.10/drivers/remoteproc/cvi_sg2002_c906l_remoteproc.c
+@@ -0,0 +1,159 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * ST's Remote Processor Control Driver
++ *
++ * Copyright (C) 2015 STMicroelectronics - All Rights Reserved
++ *
++ * Author: Ludovic Barre <ludovic.barre@st.com>
++ *
++ * Copyright (C) 2025 CHIANG,KUAN-TING - All Rights Reserved
++ *
++ * Author: CHIANG,KUAN-TING <n96121210@gs.ncku.edu.tw>
++ */
++
++#include <linux/clk.h>
++#include <linux/err.h>
++#include <linux/interrupt.h>
++#include <linux/kernel.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/of_device.h>
++#include <linux/of_reserved_mem.h>
++#include <linux/platform_device.h>
++#include <linux/printk.h>
++#include <linux/regmap.h>
++#include <linux/remoteproc.h>
++#include <linux/reset.h>
++#include "remoteproc_internal.h"
++
++struct cvi_rproc {
++	struct reset_control	*reset;
++};
++
++static void *reg_base;
++
++static int cvi_rproc_start(struct rproc *rproc)
++{
++	struct cvi_rproc *ddata = rproc->priv;
++	int err;
++
++	err = reset_control_deassert(ddata->reset);
++	if (err) {
++		dev_err(&rproc->dev, "Failed to deassert Power Reset\n");
++		return err;
++	}
++
++	dev_info(&rproc->dev, "Started from 0x%llx\n", rproc->bootaddr);
++
++	return 0;
++}
++
++static int cvi_rproc_stop(struct rproc *rproc)
++{
++	struct cvi_rproc *ddata = rproc->priv;
++	int sw_err = 0, pwr_err = 0;
++
++	pwr_err = reset_control_assert(ddata->reset);
++	if (pwr_err)
++		dev_err(&rproc->dev, "Failed to assert Power Reset\n");
++
++	return sw_err ?: pwr_err;
++}
++
++static void *cvi_rproc_da_to_va(struct rproc *rproc, u64 da, size_t len)
++{
++	return reg_base;
++}
++
++static const struct rproc_ops cvi_rproc_ops = {
++	.start			= cvi_rproc_start,
++	.stop			= cvi_rproc_stop,
++	.da_to_va		= cvi_rproc_da_to_va,
++};
++
++static const struct of_device_id cvi_rproc_match[] = {
++	{ .compatible = "cvi,sg2002-rproc", .data = NULL },
++	{},
++};
++MODULE_DEVICE_TABLE(of, cvi_rproc_match);
++
++static int cvi_rproc_parse_dt(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct rproc *rproc = platform_get_drvdata(pdev);
++	struct cvi_rproc *ddata = rproc->priv;
++
++	ddata->reset = devm_reset_control_get_exclusive(dev, NULL);
++	if (IS_ERR(ddata->reset)) {
++		dev_err(dev, "Failed to get Power Reset\n");
++		return PTR_ERR(ddata->reset);
++	}
++
++	return 0;
++}
++
++static int cvi_rproc_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct cvi_rproc *ddata;
++	struct device_node *np = dev->of_node;
++	struct rproc *rproc;
++	int ret;
++
++	rproc = rproc_alloc(dev, np->name, &cvi_rproc_ops, NULL, sizeof(*ddata));
++	if (!rproc) {
++		return -ENOMEM;
++	}
++		
++	rproc->has_iommu = false;
++	rproc->ops->parse_fw = NULL;
++	ddata = rproc->priv;
++
++	platform_set_drvdata(pdev, rproc);
++
++	ret = cvi_rproc_parse_dt(pdev);
++	if (ret) {
++		goto free_rproc;
++	}
++	
++	struct resource *res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	reg_base = devm_ioremap(&pdev->dev, res->start,
++		res->end - res->start);
++	rproc->auto_boot = false;
++
++	ret = rproc_add(rproc);
++	if (ret) {
++		goto free_rproc;
++	}
++		
++	return 0;
++
++free_rproc:
++	rproc_free(rproc);
++	return ret;
++}
++
++static int cvi_rproc_remove(struct platform_device *pdev)
++{
++	struct rproc *rproc = platform_get_drvdata(pdev);
++
++	rproc_del(rproc);   
++	rproc_free(rproc);
++
++	return 0;
++}
++
++static struct platform_driver cvi_rproc_driver = {
++	.probe = cvi_rproc_probe,
++	.remove = cvi_rproc_remove,
++	.driver = {
++		.name = "cvi-rproc",
++		.of_match_table = of_match_ptr(cvi_rproc_match),
++	},
++};
++module_platform_driver(cvi_rproc_driver);
++
++MODULE_DESCRIPTION("CVI Remote Processor Control Driver");
++MODULE_AUTHOR("CHIANG,KUAN-TING <n96121210@gs.ncku.edu.tw>");
++MODULE_LICENSE("GPL v2");
+-- 
+2.43.0
+

@@ -1,0 +1,19 @@
+From d5c0bcf28ce9694d8a553711a484ce0b0131fa0c Mon Sep 17 00:00:00 2001
+From: Jeremy Lu <ja0741187@gmail.com>
+Date: Wed, 24 Jun 2026 23:34:37 +0800
+Subject: [PATCH 10/11] update threadx submodule
+
+---
+ threadx | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/threadx b/threadx
+index 49ad38fbd..f0d2c71c7 160000
+--- a/threadx
++++ b/threadx
+@@ -1 +1 @@
+-Subproject commit 49ad38fbd540c9709e322abd38f520218e5beaf9
++Subproject commit f0d2c71c711568856fd36fd01790f21b044e5290
+-- 
+2.43.0
+
