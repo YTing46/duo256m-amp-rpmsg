@@ -6,6 +6,12 @@ Milk-V Duo256M（SG2002，雙 C906 AMP）的異質多核通訊機制移植：
 
 本專題復刻並延伸 [HenryChaing 的「Linux 核心專題: 異質多核通訊機制」](https://hackmd.io/@sysprog/linux2025-projects)。
 
+本 repo 同時收錄 vendor 5.10 對照組：原本分散在
+[jeremylu0830/milkv_sdk](https://github.com/jeremylu0830/milkv_sdk)（SDK 修改）與
+[jeremylu0830/duo-example-rtt](https://github.com/jeremylu0830/duo-example-rtt)（userspace 量測工具）
+的內容已併入 `patches/vendor-sdk/`、`bench/vendor-5.10/`，commit 歷史保留原作者署名。
+說明見 `docs/vendor-5.10-baseline.md`。
+
 ## 成果總覽
 
 | 項目 | 狀態 |
@@ -18,6 +24,7 @@ Milk-V Duo256M（SG2002，雙 C906 AMP）的異質多核通訊機制移植：
 | RTT 分解量測 + payload sweep 對照 vendor | ✅ |
 | **RPMsg 100% upstream 化**（remoteproc vdev + cv1800-mailbox，glue 退役） | ✅（300/300，**127.6µs**——反超手工 glue） |
 | mainline bug ×4：clk_efuse 依賴、mailbox EN 覆寫、rproc_virtio dma_coherent、mailbox txpoll hrtimer 風暴 | ✅ 皆附修法 |
+| vendor 5.10 對照組：SDK patch series（套在 v2.0.1）+ 本板 RTT 分解數據 | ✅（Jeremy Lu 量測，10k 筆） |
 
 ### 延遲數據（RTT p50）
 
@@ -27,6 +34,9 @@ Milk-V Duo256M（SG2002，雙 C906 AMP）的異質多核通訊機制移植：
 | mainline 7.0 glue 優化版（cached buffers + RT kthread） | 152.0µs | 162.1µs | +10.1µs |
 | mainline 7.0 全 upstream（修正前） | 176.4µs | — | — |
 | **mainline 7.0 全 upstream（終態：txdone-by-ACK + hard-IRQ 直送）** | **127.6µs** | 139.2µs | +11.6µs |
+
+註：本板 vendor 5.10 實測（Jeremy Lu，decomp4 探針版，8B 訊息）RTT p50 為 105.8µs，
+素身 bench（4B）為 75.3µs。兩者的探針組都與上表不同，逐段對照見 `docs/vendor-5.10-baseline.md`。
 
 全 upstream 架構最初比手工 glue 慢 24µs，逐段分解後定位出兩個可修的
 mainline 框架成本（mailbox poll hrtimer 空轉、threaded IRQ 排程來回），
@@ -64,7 +74,15 @@ devm_rproc_add 與手動 rproc_del 的 double-delete），見 `patches/linux/001
 patches/linux/    24 個 patch：v7.0-rc6 → 完整可跑的 100% upstream 架構 AMP 系統
                   （0009/0010 為 Junhui Liu 的 v2 系列，保留原作者署名）
 patches/threadx/  C906L ThreadX 韌體修改（7 個 patch）（基於 HenryChaing/ThreadX-to-RISC-V64）
+patches/vendor-sdk/
+                  vendor 5.10 對照組：11 個 patch，套在 duo-buildroot-sdk-v2 v2.0.1
+                  （0001–0007 HenryChaing：ADB/ThreadX/remoteproc/RPMsg glue；
+                    0008–0011 Jeremy Lu：RTT 探針）
 bench/            RTT 量測工具（總量/分解/payload sweep）+ CSV 數據
+bench/vendor-5.10/
+                  vendor 5.10 userspace 工具（pingpong、LED、RTT bench、decomp4、rtt.py）
+bench/data/vendor-5.10/
+                  vendor 5.10 本板數據（10k 筆 CSV ×2 + 分解圖）
 board/            板端開機鏈 scripts（S97adb/S98cvirtos/S99user、usb-adb.sh）、
                   boot.its（FIT）、驗證過的 kernel .config
 docs/             工程筆記（含完整除錯歷程與翻案記錄）
@@ -81,8 +99,26 @@ lzma -9 -k Image && mkimage -f board/boot.its boot.sd   # load addr 0x82000000
 # boot.sd 放 SD 卡第一分割區；cvirtos.elf（ThreadX）放 rootfs /lib/firmware
 ```
 
+vendor 5.10 對照組：
+
+```sh
+git -C duo-buildroot-sdk-v2 checkout v2.0.1
+git -C duo-buildroot-sdk-v2 am "$PWD"/patches/vendor-sdk/*.patch
+make -C bench/vendor-5.10        # 需先 source duo-examples 的 envsetup.sh
+```
+
+ThreadX submodule 的兩個 commit 未公開，細節與替代做法見 `docs/vendor-5.10-baseline.md`。
+
 序列埠：板端 console 115200（PL2303 注意 termios2 BOTHER）；C906L console 124000。
 注意這塊板的 warm reboot（`reboot` 指令）會卡在 FSBL，要斷電重上。
+
+## 來源與貢獻者
+
+| repo | 作者 | 併入位置 |
+|---|---|---|
+| [YTing46/duo256m-mainline-amp](https://github.com/YTing46/duo256m-mainline-amp)（主線） | YTing46 | 全部 mainline 內容 |
+| [jeremylu0830/milkv_sdk](https://github.com/jeremylu0830/milkv_sdk) | HenryChaing、Jeremy Lu | `patches/vendor-sdk/` |
+| [jeremylu0830/duo-example-rtt](https://github.com/jeremylu0830/duo-example-rtt) | HenryChaing、Jeremy Lu | `bench/vendor-5.10/`、`bench/data/vendor-5.10/` |
 
 ## 參考
 
