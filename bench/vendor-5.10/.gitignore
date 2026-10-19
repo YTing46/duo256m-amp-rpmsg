@@ -1,2 +1,6 @@
+*.o
 mailbox_pingpong
 mailbox_led
+rpmsg_rtt_bench
+rpmsg_little_core_cost
+rpmsg_rtt_decomp4

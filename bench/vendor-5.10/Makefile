@@ -66,6 +66,6 @@ $(RTT_decomp_4_TARGET): $(RTT_decomp_4_OBJ)
 
 .PHONY: clean
 clean:
-	@rm -f $(PINGPONG_OBJ) $(LED_OBJ)
-	@rm -f $(PINGPONG_TARGET) $(LED_TARGET)
+	@rm -f $(PINGPONG_OBJ) $(LED_OBJ) $(RTT_OBJ) $(RTT_LITTLE_OBJ) $(RTT_decomp_4_OBJ)
+	@rm -f $(PINGPONG_TARGET) $(LED_TARGET) $(RTT_TARGET) $(RTT_LITTLE_TARGET) $(RTT_decomp_4_TARGET)
 
