@@ -1,101 +1,108 @@
 # duo256m-amp-rpmsg
 
-Milk-V Duo256M（SG2002，雙 C906 AMP）的異質多核通訊機制移植：
-把 vendor 5.10 SDK 的 ThreadX + RPMsg + remoteproc 堆疊搬上 **mainline Linux 7.0-rc6**，
-修掉一路上的通訊 bug 與一個 mainline 級的 clock 根因，並以量化數據對照 vendor 基線。
+Milk-V Duo256M（SG2002）在 mainline Linux 7.0-rc6 上的非對稱多核（AMP）通訊實作與延遲量測。
 
-本專題復刻並延伸 [HenryChaing 的「Linux 核心專題: 異質多核通訊機制」](https://hackmd.io/@sysprog/linux2025-projects)。
+## 專案概述
 
-本 repo 由三個專案合成，以 [YTing46/duo256m-mainline-amp](https://github.com/YTing46/duo256m-mainline-amp)
-的 mainline 移植為主線，併入 vendor 5.10 對照組：
-[jeremylu0830/milkv_sdk](https://github.com/jeremylu0830/milkv_sdk)（SDK 修改）與
-[jeremylu0830/duo-example-rtt](https://github.com/jeremylu0830/duo-example-rtt)（userspace 量測工具）
-的內容在 `patches/vendor-sdk/`、`bench/vendor-5.10/`。三者的 commit 歷史都保留原作者署名，
-原本的三個 repo 不受影響。vendor 對照組的說明見 `docs/vendor-5.10-baseline.md`。
+SG2002 內含兩顆 RISC-V C906 核心。本專案由大核執行 Linux、小核執行 ThreadX，兩者以 RPMsg 交換訊息。
 
-## 成果總覽
+此架構最初由 HenryChaing 於[成功大學 Linux 核心設計課程專題](https://hackmd.io/@sysprog/linux2025-projects)中，
+以原廠 Linux 5.10 SDK 實作。本專案將其移植至 mainline Linux 7.0-rc6，修正移植過程中發現的問題，
+最終使 RPMsg 完全採用 upstream 驅動程式，並量測通訊延遲、與原廠版本比較。
 
-| 項目 | 狀態 |
+本 repo 整合以下三個專案，原始 repo 均未修改：
+
+| 來源 | 內容 | 位置 |
+|---|---|---|
+| [YTing46/duo256m-mainline-amp](https://github.com/YTing46/duo256m-mainline-amp) | mainline 移植 | `patches/linux`、`patches/threadx`、`bench/`、`board/`、`docs/`、`lore/` |
+| [jeremylu0830/milkv_sdk](https://github.com/jeremylu0830/milkv_sdk) | 原廠 SDK 的修改 | `patches/vendor-sdk/` |
+| [jeremylu0830/duo-example-rtt](https://github.com/jeremylu0830/duo-example-rtt) | 原廠環境的量測工具與數據 | `bench/vendor-5.10/`、`bench/data/vendor-5.10/` |
+
+所有 commit 均保留原作者資訊。
+
+## 成果
+
+| 項目 | 結果 |
 |---|---|
-| mainline 7.0-rc6 在 Duo256M 開機（SD 卡、FIT image） | ✅ |
-| USB gadget ADB（免序列線工作流） | ✅ |
-| RPMsg host↔C906L pingpong 穩定通訊 | ✅（修掉 3 個 bug） |
-| upstream C906L remoteproc driver（Junhui Liu v2）真機打通 | ✅（+3 個 review 修正） |
-| SEC_SYS clock 根因（mainline 級 bug）+ 正式修法 | ✅ |
-| RTT 分解量測 + payload sweep 對照 vendor | ✅ |
-| **RPMsg 100% upstream 化**（remoteproc vdev + cv1800-mailbox，glue 退役） | ✅（300/300，**127.6µs**——反超手工 glue） |
-| mainline bug ×4：clk_efuse 依賴、mailbox EN 覆寫、rproc_virtio dma_coherent、mailbox txpoll hrtimer 風暴 | ✅ 皆附修法 |
-| vendor 5.10 對照組：SDK patch series（套在 v2.0.1）+ RTT 分解數據 | ✅（Jeremy Lu 量測，10k 筆） |
+| mainline 7.0-rc6 自 SD 卡開機 | 完成 |
+| 經 USB 以 ADB 操作開發板，無須序列埠 | 完成 |
+| Linux 與小核之間的 pingpong 通訊 | 穩定，連續 1000 次全數成功 |
+| 小核啟停改用 upstream remoteproc 驅動（Junhui Liu v2 系列） | 完成，另修正 3 個問題 |
+| RPMsg 完全改用 upstream 驅動，不再使用原廠驅動 | 完成 |
+| 延遲量測，含分段拆解與不同訊息長度 | 完成，並與原廠版本對照 |
 
-### 延遲數據（RTT p50）
+## 延遲量測
 
-| 平台 | 4B | 480–496B | payload 斜率 |
+量測範圍為 Linux 送出一則訊息、小核原樣回傳、Linux 讀回為止的來回時間（RTT），下表為中位數：
+
+| 版本 | 短訊息 | 480–496 位元組 | 訊息長度增加造成的差值 |
 |---|---|---|---|
-| vendor 5.10（Jeremy Lu，decomp5，**32B**） | 114.0µs | 131.8µs | +17.9µs |
-| mainline 7.0 glue 優化版（cached buffers + RT kthread） | 152.0µs | 162.1µs | +10.1µs |
-| mainline 7.0 全 upstream（修正前） | 176.4µs | — | — |
-| **mainline 7.0 全 upstream（終態：txdone-by-ACK + hard-IRQ 直送）** | **127.6µs** | 139.2µs | +11.6µs |
+| 原廠 Linux 5.10（Jeremy Lu 量測，32 位元組） | 114.0µs | 131.8µs | 17.9µs |
+| mainline，沿用原廠驅動並最佳化 | 152.0µs | 162.1µs | 10.1µs |
+| mainline，全面改用 upstream 驅動（修正前） | 176.4µs | — | — |
+| mainline，全面改用 upstream 驅動（最終版本） | 127.6µs | 139.2µs | 11.6µs |
 
-註：vendor 5.10 的數字全部來自 Jeremy Lu 的量測（[HackMD](https://hackmd.io/ei4rzk-OQfOreOa5fG2eKQ)，
-decomp4 與素身 bench 的原始數據在 `bench/data/vendor-5.10/`）。帶分解探針的 RTT p50 隨探針組與量測輪次
-落在 105.8–130.4µs：decomp4（8B）105.8、decomp5 payload sweep（32B）114.0、decomp5 主輪 130.4；
-不帶探針的素身 bench（4B）為 75.3µs。mainline 終態的 127.6µs 也是帶探針的數字，
-比 decomp5 32B 慢 13.6µs、比 decomp4 慢 21.8µs。逐段對照見 `docs/vendor-5.10-baseline.md`。
+mainline 各列的短訊息均為 4 位元組。
 
-全 upstream 架構最初比手工 glue 慢 24µs，逐段分解後定位出兩個可修的
-mainline 框架成本（mailbox poll hrtimer 空轉、threaded IRQ 排程來回），
-修正後**反超手工 glue 逾 20µs**，落在 vendor 5.10 帶探針量測的範圍內（見上註）；
-p99 尾巴 301 → 178µs（殘餘尾巴經機率驗證為 kernel timer tick，非 bug）。
-大 payload 斜率仍優於 vendor（cached buffers + streaming DMA sync 的效果）。
-原始分解數據見 `bench/data/native-*.csv`（修正前 / ACK / hard-IRQ 三組），
-完整分析見 `docs/linux7-migration.md` 與 `docs/rpmsg-native-design.md`。
+全面改用 upstream 驅動後，延遲起初比沿用原廠驅動的版本高 24µs。經分段拆解，定位出兩項框架層的額外成本：
+mailbox 驅動在閒置時持續輪詢，以及收訊路徑多出一次執行緒排程。兩項修正後，延遲較沿用原廠驅動的版本低 20µs 以上；
+p99 由 301µs 降至 178µs，其餘的長尾延遲經分析來自 kernel 定時器中斷。
 
-## 修掉的關鍵 bug
+與原廠版本比較時的注意事項：
 
-1. **rpmsg 通知遺失（host 端，兩處）**：`rtos_cmdqu_handler` 用單一全域
-   `rtos_cmd_id` + `schedule_delayed_work` 合併背靠背通知，只服務最後一個
-   virtqueue → 改為輪詢全部 vq；mailbox ISR 的 `set_val` 只讀一次，漏接
-   ISR 進行中抵達的訊息 → 改為 do/while 重讀排空。
-2. **`dma-noncoherent` 缺失**：rpmsg 節點在 DT root、不在 `/soc` 之下，
-   繼承不到 `dma-noncoherent` → virtio buffer 變 cacheable，C906B 的寫入
-   滯留 D-cache，無 cache 的 C906L 讀到舊資料 → 時序性 1~數回合 stall。
-3. **SEC_SYS clock 根因（本專題最重要的發現）**：SEC_SYS（0x020B0000，
-   C906L 開機控制暫存器所在）的匯流排存取需要 `clk_efuse`（CLK_EN_0 bit 11）。
-   mainline 的 `clk_disable_unused` 在開機尾聲把它關掉，之後**任何**對該區塊的
-   load/store 都會懸死整條 AXI 匯流排（連 MMC 陪葬）——一行
-   `devmem 0x020B0004` 即可重現。vendor 從未把這條依賴寫進 device tree
-   （藏在 `cvitek-spacc.c` 的手動 `clk_prepare_enable` 裡）。
-   修法：sec_sys syscon 節點加 `clocks = <&clk CLK_EFUSE>`，
-   syscon 把 clock attach 到 regmap-mmio，每次暫存器存取 just-in-time 開關。
-   詳見 `patches/linux/0013`。
+- 原廠數據均由 Jeremy Lu 量測，量測過程記錄於其 [HackMD 筆記](https://hackmd.io/ei4rzk-OQfOreOa5fG2eKQ)，
+  部分原始數據位於 `bench/data/vendor-5.10/`。
+- 量測探針會影響結果。原廠版本在不同探針配置下的 RTT 中位數介於 105.8 至 130.4µs，未加探針時為 75.3µs。
+- mainline 的 127.6µs 同樣含探針，比原廠 32 位元組的 114.0µs 高 13.6µs，比原廠 8 位元組的 105.8µs 高 21.8µs。
+- mainline 隨訊息長度增加的延遲較小，原因是共享記憶體改為可快取，並由驅動明確執行快取同步。
 
-upstream driver 本身另有三個修正（`__iomem` cast、binding `additionalItems`、
-devm_rproc_add 與手動 rproc_del 的 double-delete），見 `patches/linux/0011`。
+分段拆解的細節見 `docs/vendor-5.10-baseline.md`、`docs/linux7-migration.md` 與 `docs/rpmsg-native-design.md`，
+原始數據位於 `bench/data/`。
 
-## Repo 結構
+## 修正的問題
+
+1. **Linux 端遺失通知（兩處）。** 原廠驅動以單一全域變數記錄通知，連續兩則通知僅會處理最後一則；
+   mailbox 中斷處理程序僅讀取一次狀態，處理期間到達的訊息因此遺漏。修正後改為每次檢查所有佇列，
+   並重複讀取至無新訊息為止。
+2. **共享記憶體的快取屬性錯誤。** RPMsg 裝置節點位於 device tree 根節點，未繼承 `dma-noncoherent` 屬性，
+   導致大核寫入的資料停留在其快取中，無快取的小核讀到舊資料，通訊數回合後即中斷。
+3. **SEC_SYS 時脈依賴（本專案最主要的發現）。** 小核的啟動控制暫存器位於 SEC_SYS（0x020B0000），
+   存取該區塊需要 `clk_efuse` 時脈。mainline 在開機末段會關閉未被任何驅動登記的時脈，
+   此後任何對該區塊的存取都會使整條匯流排停止回應，SD 卡亦隨之失效；以 `devmem 0x020B0004` 即可重現。
+   原廠 SDK 並未在 device tree 中描述此依賴，而是在加密驅動中手動開關時脈。
+   修正方式為在 sec_sys 節點加入 `clocks = <&clk CLK_EFUSE>`，由 syscon 在每次存取暫存器時自動開關時脈，
+   見 `patches/linux/0013`。
+
+upstream 的 C906L 驅動另修正三項問題（`__iomem` 轉型、binding 的 `additionalItems`、rproc 重複刪除），
+見 `patches/linux/0011`。
+
+本專案共發現 4 個 mainline 本身的問題，均附修正：`clk_efuse` 的時脈依賴、mailbox 啟用暫存器遭整體覆寫、
+`rproc_virtio` 未繼承 DMA 一致性設定、mailbox 輪詢計時器在閒置時持續觸發。
+
+## 目錄結構
 
 ```
-patches/linux/    24 個 patch：v7.0-rc6 → 完整可跑的 100% upstream 架構 AMP 系統
-                  （0009/0010 為 Junhui Liu 的 v2 系列，保留原作者署名）
-patches/threadx/  C906L ThreadX 韌體修改（7 個 patch）（基於 HenryChaing/ThreadX-to-RISC-V64 amp @ 49ad38f）
-patches/vendor-sdk/
-                  vendor 5.10 對照組：11 個 patch，套在 duo-buildroot-sdk-v2 v2.0.1
-                  （0001–0007 HenryChaing：ADB/ThreadX/remoteproc/RPMsg glue；
-                    0008–0011 Jeremy Lu：RTT 探針）
-bench/            RTT 量測工具（總量/分解/payload sweep）+ CSV 數據
-bench/vendor-5.10/
-                  vendor 5.10 userspace 工具（pingpong、LED、RTT bench、decomp4、decomp4_stamp、rtt.py）
-bench/data/vendor-5.10/
-                  vendor 5.10 數據（Jeremy Lu，10k 筆 CSV ×2 + 分解圖）
-board/            板端開機鏈 scripts（S97adb/S98cvirtos/S99user、usb-adb.sh、run_usb.sh）、
-                  boot.its（FIT）、驗證過的 kernel .config
-scripts/          build-image.sh（建置 SD 映像）、run-board-tests.sh（上板測試）
-docs/             工程筆記（含完整除錯歷程與翻案記錄）
+patches/linux/           24 個 patch，將 v7.0-rc6 建構為完整可運作的系統
+                         （0009、0010 為 Junhui Liu 的 v2 系列，保留原作者）
+patches/threadx/         小核 ThreadX 韌體的 7 個 patch
+                         （基於 HenryChaing/ThreadX-to-RISC-V64 amp 分支 49ad38f）
+patches/vendor-sdk/      套用於原廠 SDK v2.0.1 的 11 個 patch
+                         （0001–0007：HenryChaing 的 ADB、ThreadX、remoteproc、RPMsg；
+                           0008–0011：Jeremy Lu 的延遲量測探針）
+bench/                   mainline 量測工具與數據
+bench/vendor-5.10/       原廠環境量測工具
+bench/data/vendor-5.10/  原廠環境量測數據（Jeremy Lu，各 10000 筆）
+board/                   開發板開機腳本、FIT 映像設定、kernel 設定檔
+scripts/                 SD 映像建置與上板測試腳本
+docs/                    工程筆記與除錯紀錄
+lore/                    upstream patch 審查回覆草稿
 ```
 
-## 重現步驟
+## 建置與重現
 
-### 一鍵建置 SD 映像（不需要 root）
+### 建置 SD 映像
+
+建置過程不需要 root 權限：
 
 ```sh
 sudo apt install -y git curl unzip build-essential flex bison bc xz-utils u-boot-tools \
@@ -104,73 +111,71 @@ sudo apt install -y git curl unzip build-essential flex bison bc xz-utils u-boot
 scripts/build-image.sh
 ```
 
-腳本依序執行 `fetch kernel rtos bench adbd image`，也可以只跑其中幾步（例如 `scripts/build-image.sh kernel image`）：
+腳本會自動下載所需的原始碼與工具鏈（工具鏈約 7 GB），產出的映像位於 `build/out/duo256m-mainline-<版本>.img`。
+建置分為下列步驟，可單獨執行其中幾項，例如 `scripts/build-image.sh kernel image`：
 
 | 步驟 | 內容 |
 |---|---|
-| `fetch` | 下載 v7.0-rc6 並套 `patches/linux`、ThreadX `amp`（`49ad38f`）並套 `patches/threadx`、milkv host-tools 工具鏈（約 7 GB）、SDK v2.0.1 的 `build/`（只用來產生小核記憶體配置）、官方 v2.0.1 SD 映像（驗 sha256），並產生板子用的 SSH 金鑰 |
-| `kernel` | 用 `board/linux7x-boot-verified.config` 編 Image、DTB、模組，依 `board/boot.its` 打包 `boot.sd`（載入位址 0x82000000） |
-| `rtos` | 編 C906L 韌體 `cvirtos.elf` |
-| `bench` | 以 static musl、`-march=rv64imafdc` 編 `bench/` 的 4 支工具 |
-| `adbd` | 用 buildroot 2024.02.13（驗 sha256）的 android-tools 編 static、`rv64imafdc` 的 adbd，與 SDK 內建的是同一份 4.2.2 原始碼 |
-| `image` | 以官方映像為底：換掉第一分割區的 `boot.sd`；rootfs 加入模組、`/lib/firmware/cvirtos.elf`、`board/S98cvirtos`、adbd、`board/run_usb.sh`、`board/usb-adb.sh`（`usb.sh` 依 `DUO_USB` 指向 ADB 或 NCM）、`/root/bench/`、root 的 SSH 公鑰 |
+| `fetch` | 下載 kernel、ThreadX、工具鏈、原廠 SDK 建置腳本與官方 SD 映像，套用 patch，並產生 SSH 金鑰 |
+| `kernel` | 編譯 kernel 並封裝為 `boot.sd` |
+| `rtos` | 編譯小核韌體 `cvirtos.elf` |
+| `bench` | 編譯量測工具 |
+| `adbd` | 自原始碼編譯 adbd |
+| `image` | 以官方映像為基礎，加入上述產出 |
 
-產出在 `build/out/duo256m-mainline-<kernel release>.img`（附 `.sha256` 與 `manifest.txt`）。
-可用環境變數調整：`DUO_BUILD_DIR`（工作目錄，預設 `build/`）、`DUO_HOST_TOOLS`（沿用既有的 host-tools）、
-`DUO_SSH_PUBKEY`（改用自己的公鑰）、`JOBS`。
+可透過環境變數調整：`DUO_BUILD_DIR`（工作目錄）、`DUO_HOST_TOOLS`（沿用已下載的工具鏈）、
+`DUO_SSH_PUBKEY`（指定公鑰）、`DUO_USB`（USB 模式，見注意事項）。
 
-注意：
-- userspace 工具不能用 SDK 預設的 `-march=...v0p7xthead`：mainline 沒開 C906 的 T-Head vector 0.7，會 SIGILL。
-- 開機時的 USB 由 `DUO_USB` 決定：`adb`（預設，與 2026-07 的工作流程相同，`adb shell`／`adb push`）
-  或 `ncm`（USB 網路，板端 192.168.42.1，dnsmasq 用 DHCP 配位址給主機，dropbear SSH）。
-  官方映像本身沒有 adbd，由 `adbd` 步驟補上。NCM＋ADB 複合 gadget 能列舉，但 NCM 從板子送往主機的
-  封包到不了，原因未解，所以二選一。
-- `board/linux7x-boot-verified.config` 是 2026-07-15 那顆實際開機的 kernel 內嵌的 config（`/proc/config.gz`
-  同源）：USB gadget 整組編進 kernel（`=y`），adbd 用的 functionfs 開機就在，不需要載模組。
-
-### 燒卡與上板測試
+### 燒錄與測試
 
 ```sh
-# 確認讀卡機的裝置路徑（用 by-id 才不會寫錯磁碟），整張卡會被覆寫
+# 確認讀卡機的裝置路徑；整張卡的內容將被覆寫
 ls -l /dev/disk/by-id/ | grep usb
-sudo dd if=build/out/duo256m-mainline-<release>.img of=/dev/disk/by-id/<讀卡機> bs=4M conv=fsync status=progress
+sudo dd if=build/out/duo256m-mainline-<版本>.img of=/dev/disk/by-id/<讀卡機> bs=4M conv=fsync status=progress
+```
 
-# 卡插上板子、USB-C 接主機開機，約 30 秒後：
+將 SD 卡裝回開發板並以 USB-C 供電開機，約 30 秒後執行：
+
+```sh
 scripts/run-board-tests.sh
 ```
 
-`run-board-tests.sh` 經 ADB（偵測到裝置時）或 SSH 檢查 remoteproc 與 dmesg、跑 pingpong（含韌體 stop/start 後再跑一次）、
-RTT、分段量測與 payload sweep，結果存在 `build/results/<時間>/`，全部通過才回傳 0。
-量測輸出先寫在板子的 `/tmp` 再取回，避免 USB 傳輸干擾延遲尾巴。
-2026-10-20 的實測：pass 8/8，分段 RTT p50 127.3µs / p99 182µs，payload 4→480B 128.9→138.9µs。
+測試項目包括小核啟動狀態、pingpong（含小核重啟後的再次測試）與各項延遲量測，結果存放於 `build/results/`，
+全部通過時回傳 0。2026-10-20 的測試 8 項全數通過，RTT 中位數介於 124 至 129µs。
 
-vendor 5.10 對照組：
+### 注意事項
+
+- 開機時僅能啟用一種 USB 功能，由 `DUO_USB` 指定：預設 `adb`；或 `ncm`，以 USB 網路透過 SSH 連線至 192.168.42.1。
+  同時啟用兩者時裝置可被偵測，但網路僅能單向傳輸，原因尚未查明。
+- 官方映像不含 adbd，由 `adbd` 步驟另行編譯加入。
+- 開發板上的程式須以 `-march=rv64imafdc` 編譯。原廠 SDK 預設啟用 T-Head 向量指令，
+  mainline 不支援該指令集，執行時會觸發非法指令例外（SIGILL）。
+- `board/linux7x-boot-verified.config` 取自 2026-07-15 實際開機的 kernel，USB gadget 直接編入 kernel，無須載入模組。
+- `reboot` 指令無法重新啟動開發板，須斷電後重新上電。
+- 序列埠主控台速率為 115200 baud，小核主控台為 124000 baud。使用 PL2303 相容晶片的轉接線時，可能需以 termios2 的 BOTHER 設定速率。
+
+### 原廠 5.10 對照組
 
 ```sh
 git -C duo-buildroot-sdk-v2 checkout v2.0.1
 git -C duo-buildroot-sdk-v2 am "$PWD"/patches/vendor-sdk/*.patch
-make -C bench/vendor-5.10        # 需先 source duo-examples 的 envsetup.sh
+make -C bench/vendor-5.10        # 須先 source duo-examples 的 envsetup.sh
 ```
 
-ThreadX submodule 的兩個 commit 未公開；分段量測改用 `amp`（`49ad38f`）加
-`patches/threadx/0001–0003` 的韌體，搭配 `bench/vendor-5.10/rpmsg_rtt_decomp4_stamp`
-（`0004–0007` 不適用 vendor kernel）。細節見 `docs/vendor-5.10-baseline.md`。
+Jeremy Lu 使用的小核韌體修改未公開。如需分段量測，可改用 ThreadX `amp` 分支（49ad38f）加上
+`patches/threadx/0001–0003`，搭配 `bench/vendor-5.10/rpmsg_rtt_decomp4_stamp`。
+`0004–0007` 不適用於原廠 kernel，原因與細節見 `docs/vendor-5.10-baseline.md`。
 
-序列埠：板端 console 115200（PL2303 注意 termios2 BOTHER）；C906L console 124000。
-注意這塊板的 warm reboot（`reboot` 指令）會卡在 FSBL，要斷電重上。
+## 致謝
 
-## 來源與貢獻者
+- HenryChaing：原始專題，以及原廠環境下 ADB、ThreadX、remoteproc、RPMsg 的移植。
+- Jeremy Lu：原廠環境的延遲量測與分段拆解。
+- Junhui Liu：upstream C906L remoteproc 驅動。
 
-| repo | 作者 | 併入位置 |
-|---|---|---|
-| [YTing46/duo256m-mainline-amp](https://github.com/YTing46/duo256m-mainline-amp)（主線） | YTing46 | mainline 移植：`patches/linux`、`patches/threadx`、`bench/`、`board/`、`docs/`、`lore/` |
-| [jeremylu0830/milkv_sdk](https://github.com/jeremylu0830/milkv_sdk) | HenryChaing、Jeremy Lu | `patches/vendor-sdk/` |
-| [jeremylu0830/duo-example-rtt](https://github.com/jeremylu0830/duo-example-rtt) | HenryChaing、Jeremy Lu | `bench/vendor-5.10/`、`bench/data/vendor-5.10/` |
+## 參考資料
 
-## 參考
-
-- [HenryChaing — Linux 核心專題: 異質多核通訊機制](https://hackmd.io/@sysprog/linux2025-projects)（vendor 5.10 原始專題）
-- [Jeremy Lu — vendor 5.10 RPMsg RTT 量測與分解](https://hackmd.io/ei4rzk-OQfOreOa5fG2eKQ)（decomp4／decomp5，vendor 5.10 延遲數據的出處）
-- [Junhui Liu — remoteproc: Add C906L controller for Sophgo CV1800B SoC (v2)](https://lore.kernel.org/linux-remoteproc/)（upstream driver 素材）
-- [milkv-duo/duo-buildroot-sdk-v2 v2.0.1](https://github.com/milkv-duo/duo-buildroot-sdk-v2/releases/tag/v2.0.1)（vendor 參考基線：FSBL、5.10 驅動對照）
-- [NCKU jserv Linux 核心設計課程](https://wiki.csie.ncku.edu.tw/linux/schedule)
+- [HenryChaing — Linux 核心專題：異質多核通訊機制](https://hackmd.io/@sysprog/linux2025-projects)
+- [Jeremy Lu — 原廠 5.10 的 RPMsg 延遲量測與拆解](https://hackmd.io/ei4rzk-OQfOreOa5fG2eKQ)
+- [Junhui Liu — remoteproc: Add C906L controller for Sophgo CV1800B SoC (v2)](https://lore.kernel.org/linux-remoteproc/)
+- [milkv-duo/duo-buildroot-sdk-v2 v2.0.1](https://github.com/milkv-duo/duo-buildroot-sdk-v2/releases/tag/v2.0.1)
+- [成功大學 Linux 核心設計課程](https://wiki.csie.ncku.edu.tw/linux/schedule)
