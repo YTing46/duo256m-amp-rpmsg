@@ -1,9 +1,11 @@
 #!/bin/bash
 # run-board-tests.sh - test the mainline AMP stack on a Duo256M booted from
-# scripts/build-image.sh's image, over its USB NCM link (dropbear, key auth).
+# scripts/build-image.sh's image. Talks to the board over ADB (DUO_USB=adb
+# images) or SSH over USB NCM (DUO_USB=ncm images), whichever answers.
 #
 # Environment:
-#   DUO_HOST         board address (default: 192.168.42.1)
+#   DUO_TRANSPORT    adb or ssh (default: adb if a device is attached, else ssh)
+#   DUO_HOST         board address for ssh (default: 192.168.42.1)
 #   DUO_SSH_KEY      private key authorized in the image
 #                    (default: $DUO_BUILD_DIR/keys/duo_ed25519)
 #   DUO_BUILD_DIR    as for build-image.sh (default: <repo>/build)
@@ -20,21 +22,49 @@ RES=${DUO_RESULTS_DIR:-$B/results}/$(date +%Y%m%d-%H%M%S)
 SSH=(ssh -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
      -o LogLevel=ERROR -o ConnectTimeout=5 "root@$HOST")
 
-[ -f "$KEY" ] || { echo "no SSH key at $KEY (set DUO_SSH_KEY)" >&2; exit 1; }
+T=${DUO_TRANSPORT:-}
+if [ -z "$T" ]; then
+	if command -v adb >/dev/null 2>&1 && [ "$(timeout 5 adb get-state 2>/dev/null)" = device ]; then
+		T=adb
+	else
+		T=ssh
+	fi
+fi
+
+# run <command>: board shell command; stdout without the CRs adb's pty adds
+# (this adbd predates exit-status forwarding, so callers check output/files)
+# fetch <board file> <local file>
+case $T in
+adb)
+	command -v adb >/dev/null 2>&1 || { echo "no adb on this host" >&2; exit 1; }
+	run()   { adb shell "$*" | tr -d '\r'; }
+	fetch() { adb pull "$1" "$2" >/dev/null 2>&1; }
+	up()    { [ "$(timeout 5 adb get-state 2>/dev/null)" = device ]; }
+	;;
+ssh)
+	[ -f "$KEY" ] || { echo "no SSH key at $KEY (set DUO_SSH_KEY)" >&2; exit 1; }
+	run()   { "${SSH[@]}" "$*"; }
+	fetch() { "${SSH[@]}" "cat $1" > "$2"; }
+	up()    { "${SSH[@]}" true 2>/dev/null; }
+	;;
+*)
+	echo "DUO_TRANSPORT must be adb or ssh" >&2; exit 1 ;;
+esac
+
 mkdir -p "$RES"
 pass=0; fail=0
 ok()  { echo "PASS  $*" | tee -a "$RES/summary.txt"; pass=$((pass + 1)); }
 bad() { echo "FAIL  $*" | tee -a "$RES/summary.txt"; fail=$((fail + 1)); }
-run() { "${SSH[@]}" "$@"; }
 
-echo "waiting for ssh root@$HOST ..."
-for _ in $(seq 1 60); do run true 2>/dev/null && break; sleep 2; done
-run true 2>/dev/null || { echo "board not reachable over ssh" >&2; exit 1; }
+echo "transport: $T" | tee "$RES/summary.txt"
+echo "waiting for the board ..."
+for _ in $(seq 1 60); do up && break; sleep 2; done
+up || { echo "board not reachable over $T" >&2; exit 1; }
 
 # 1. system state
 run 'uname -a; cat /proc/cmdline; echo; cat /sys/class/remoteproc/remoteproc0/state;
      cat /sys/class/remoteproc/remoteproc0/firmware; ls -l /dev/rpmsg* 2>&1;
-     cat /mnt/diag-boot/trace.txt 2>&1; lsmod 2>/dev/null' > "$RES/system.txt" 2>&1
+     cat /mnt/diag-boot/trace.txt 2>&1; readlink /mnt/system/usb.sh' > "$RES/system.txt" 2>&1
 run 'dmesg' > "$RES/dmesg.txt" 2>&1
 grep -q "^running" "$RES/system.txt" && ok "remoteproc0 running" || bad "remoteproc0 not running"
 grep -q "rpmsg_ctrl0" "$RES/system.txt" && ok "/dev/rpmsg_ctrl0 present" || bad "/dev/rpmsg_ctrl0 missing"
@@ -54,13 +84,13 @@ pingpong() {	# <output file> <label>
 }
 pingpong "$RES/pingpong.txt" "pingpong"
 
-# 3. RTT (plain), decomposition, payload sweep. Output goes to /tmp on the
-# board and is fetched afterwards: streaming CSV through ssh during the run
-# puts USB-network IRQs and dropbear on the only Linux core and inflates the tail.
+# 3. RTT (plain), decomposition, payload sweep. Output stays on the board
+# until the run ends: streaming it to the host meanwhile puts USB traffic on
+# the only Linux core and inflates the tail.
 bench() {	# <name> <env+cmd>
-	run "$2 > /tmp/$1.csv 2> /tmp/$1.summary; echo \$? > /tmp/$1.rc"
-	run "cat /tmp/$1.csv" > "$RES/$1.csv"
-	run "cat /tmp/$1.summary" > "$RES/$1.summary"
+	run "$2 > /tmp/$1.csv 2> /tmp/$1.summary; echo \$? > /tmp/$1.rc" >/dev/null
+	fetch "/tmp/$1.csv" "$RES/$1.csv"
+	fetch "/tmp/$1.summary" "$RES/$1.summary"
 	[ "$(run "cat /tmp/$1.rc")" = 0 ]
 }
 rows() { echo $(($(wc -l < "$RES/$1.csv") - 1)); }

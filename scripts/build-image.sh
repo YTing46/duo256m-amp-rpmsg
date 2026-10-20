@@ -5,12 +5,12 @@
 #   milkv duo-buildroot-sdk-v2 v2.0.1 release image (FSBL, u-boot, rootfs)
 #   + boot.sd  : v7.0-rc6 + patches/linux, packed per board/boot.its
 #   + rootfs   : kernel modules, /lib/firmware/cvirtos.elf (ThreadX amp
-#                49ad38f + patches/threadx), board/S05modules,
-#                board/S98cvirtos, bench tools in /root/bench, an SSH key
-#                for root (the release image has dropbear, not adbd)
+#                49ad38f + patches/threadx), board/S98cvirtos, adbd built
+#                from buildroot's android-tools, bench tools in /root/bench,
+#                an SSH key for root; the USB gadget is ADB or NCM (DUO_USB)
 #
 # Usage: scripts/build-image.sh [step...]
-#   steps: fetch kernel rtos bench image   (default: all of them, in order)
+#   steps: fetch kernel rtos bench adbd image   (default: all, in order)
 #
 # Environment:
 #   DUO_BUILD_DIR   downloads, sources and outputs (default: <repo>/build)
@@ -18,6 +18,10 @@
 #                   (default: $DUO_BUILD_DIR/host-tools, ~7 GB)
 #   DUO_SSH_PUBKEY  public key to authorize for root on the board
 #                   (default: generate $DUO_BUILD_DIR/keys/duo_ed25519)
+#   DUO_USB         USB gadget at boot: adb (default, board/usb-adb.sh) or
+#                   ncm (networking at 192.168.42.1 for SSH, usb-ncm.sh).
+#                   An NCM+ADB composite enumerates, but NCM traffic from
+#                   the board to the host does not get through, so pick one.
 #   JOBS            parallel make jobs (default: nproc)
 #
 # Result: $DUO_BUILD_DIR/out/duo256m-mainline-<kernel release>.img (+ .sha256)
@@ -36,6 +40,7 @@ OUT=$B/out
 KOUT=$OUT/kernel
 STAGE=$OUT/stage
 JOBS=${JOBS:-$(nproc)}
+USB_MODE=${DUO_USB:-adb}
 
 KERNEL_URL=https://github.com/torvalds/linux.git
 KERNEL_TAG=v7.0-rc6
@@ -51,6 +56,9 @@ STOCK_URL=$SDK_URL
 STOCK_URL=${STOCK_URL%.git}/releases/download/$SDK_TAG/$STOCK_NAME.zip
 STOCK_SHA256=8feddefb8f588f390ff8a2a3039b2e3444666e78b105d6845c16f2963eff590c
 STOCK=$DL/$STOCK_NAME
+BUILDROOT_VER=2024.02.13
+BUILDROOT_URL=https://buildroot.org/downloads/buildroot-$BUILDROOT_VER.tar.xz
+BUILDROOT_SHA256=1d3e2f3c6e3d5123a734f0935f4a790650ac4f851f93539a464d4b8fb5dfa04d
 
 KCROSS=$HTD/gcc/riscv64-linux-x86_64/bin/riscv64-unknown-linux-gnu-
 UCC=$HTD/gcc/riscv64-linux-musl-x86_64/bin/riscv64-unknown-linux-musl-gcc
@@ -200,9 +208,53 @@ step_bench() {
 	done
 }
 
+step_adbd() {
+	need make:make g++:build-essential patch:patch perl:perl rsync:rsync wget:wget \
+		cpio:cpio unzip:unzip bc:bc file:file
+	log "adbd (buildroot $BUILDROOT_VER android-tools, static, rv64imafdc)"
+	local br=$B/buildroot-$BUILDROOT_VER tar=$DL/buildroot-$BUILDROOT_VER.tar.xz
+	mkdir -p "$DL"
+	[ -f "$tar" ] || curl -fL --retry 3 -o "$tar.part" "$BUILDROOT_URL"
+	[ -f "$tar.part" ] && mv "$tar.part" "$tar"
+	echo "$BUILDROOT_SHA256  $tar" | sha256sum -c --quiet || die "$tar: checksum mismatch"
+	[ -d "$br" ] || tar -xf "$tar" -C "$B"
+	mkdir -p "$B/adbd"
+	cat > "$B/adbd/adbd_defconfig" <<-EOF
+	BR2_riscv=y
+	BR2_riscv_custom=y
+	BR2_RISCV_ISA_RVM=y
+	BR2_RISCV_ISA_RVA=y
+	BR2_RISCV_ISA_RVF=y
+	BR2_RISCV_ISA_RVD=y
+	BR2_RISCV_ISA_RVC=y
+	BR2_RISCV_64=y
+	BR2_RISCV_ABI_LP64D=y
+	BR2_DL_DIR="$DL/buildroot"
+	BR2_TOOLCHAIN_EXTERNAL=y
+	BR2_TOOLCHAIN_EXTERNAL_CUSTOM=y
+	BR2_TOOLCHAIN_EXTERNAL_PREINSTALLED=y
+	BR2_TOOLCHAIN_EXTERNAL_PATH="$HTD/gcc/riscv64-linux-musl-x86_64"
+	BR2_TOOLCHAIN_EXTERNAL_CUSTOM_PREFIX="riscv64-unknown-linux-musl"
+	BR2_TOOLCHAIN_EXTERNAL_GCC_10=y
+	BR2_TOOLCHAIN_EXTERNAL_HEADERS_5_10=y
+	BR2_TOOLCHAIN_EXTERNAL_CUSTOM_MUSL=y
+	BR2_TOOLCHAIN_EXTERNAL_CXX=y
+	BR2_TOOLCHAIN_EXTERNAL_OPENMP=y
+	BR2_STATIC_LIBS=y
+	BR2_PACKAGE_ANDROID_TOOLS=y
+	# BR2_PACKAGE_ANDROID_TOOLS_ADB is not set
+	BR2_PACKAGE_ANDROID_TOOLS_ADBD=y
+	EOF
+	make -C "$br" O="$B/adbd/output" BR2_DEFCONFIG="$B/adbd/adbd_defconfig" defconfig >/dev/null
+	make -C "$br" O="$B/adbd/output" android-tools
+	"$B/adbd/output/host/bin/riscv64-unknown-linux-musl-strip" \
+		-o "$OUT/adbd" "$B/adbd/output/target/usr/bin/adbd"
+}
+
 # debugfs command helpers: add host files to the ext4 image, owned by root
 dbg_dir()  { printf 'mkdir %s\nsif %s uid 0\nsif %s gid 0\nsif %s mode 040%s\n' "$1" "$1" "$1" "$1" "$2"; }
 dbg_file() { printf 'write %s %s\nsif %s uid 0\nsif %s gid 0\nsif %s mode 0100%s\n' "$1" "$2" "$2" "$2" "$2" "$3"; }
+dbg_link() { printf 'symlink %s %s\nsif %s uid 0\nsif %s gid 0\n' "$1" "$2" "$1" "$1"; }
 
 # part <n> <start|size>: sectors, from the release image's partition table
 part() {
@@ -214,11 +266,16 @@ print(p[sys.argv[2]])' "$1" "$2"
 
 step_image() {
 	need debugfs:e2fsprogs e2fsck:e2fsprogs mcopy:mtools sfdisk:fdisk python3:python3
-	local pubkey=${DUO_SSH_PUBKEY:-$B/keys/duo_ed25519.pub}
+	local pubkey=${DUO_SSH_PUBKEY:-$B/keys/duo_ed25519.pub} usb
+	case $USB_MODE in
+	adb) usb=usb-adb.sh ;;
+	ncm) usb=usb-ncm.sh ;;
+	*) die "DUO_USB must be adb or ncm, not '$USB_MODE'" ;;
+	esac
 	local rel img p1 p2 cmds s1 n1 s2 n2 f
 	[ -f "$pubkey" ] || die "no public key at $pubkey (run the fetch step or set DUO_SSH_PUBKEY)"
-	for f in "$OUT/boot.sd" "$OUT/cvirtos.elf" "$OUT/bench/rpmsg_rtt_bench"; do
-		[ -f "$f" ] || die "$f missing: run the kernel, rtos and bench steps first"
+	for f in "$OUT/boot.sd" "$OUT/cvirtos.elf" "$OUT/bench/rpmsg_rtt_bench" "$OUT/adbd"; do
+		[ -f "$f" ] || die "$f missing: run the kernel, rtos, bench and adbd steps first"
 	done
 
 	log "assemble SD image"
@@ -243,17 +300,24 @@ step_image() {
 			while read -r f; do dbg_file "$STAGE/modules/$f" "/$f" 644; done
 		dbg_dir /lib/firmware 755
 		dbg_file "$OUT/cvirtos.elf" /lib/firmware/cvirtos.elf 644
-		dbg_file "$REPO/board/S05modules" /etc/init.d/S05modules 755
 		dbg_file "$REPO/board/S98cvirtos" /etc/init.d/S98cvirtos 755
+		# USB: run_usb.sh is the SDK's plus the UDC bind after adbd starts
+		# (patches/vendor-sdk/0001); usb.sh picks the gadget brought up at boot
+		dbg_file "$OUT/adbd" /usr/bin/adbd 755
+		echo "rm /etc/run_usb.sh"
+		dbg_file "$REPO/board/run_usb.sh" /etc/run_usb.sh 755
+		dbg_file "$REPO/board/usb-adb.sh" /mnt/system/usb-adb.sh 755
+		echo "rm /mnt/system/usb.sh"
+		dbg_link /mnt/system/usb.sh "$usb"
 		dbg_dir /root/.ssh 700
 		dbg_file "$pubkey" /root/.ssh/authorized_keys 600
 		dbg_dir /root/bench 755
 		for f in "$OUT"/bench/*; do dbg_file "$f" "/root/bench/$(basename "$f")" 755; done
 	} > "$cmds"
 	debugfs -w -f "$cmds" "$p2" > "$OUT/debugfs.log" 2>&1
-	# debugfs echoes every command and prints "Allocated inode" per write;
-	# anything else is a complaint
-	if grep -vE '^debugfs[ :]|^Allocated inode' "$OUT/debugfs.log"; then
+	# debugfs echoes every command, prints "Allocated inode" per write and
+	# an empty line per rm; anything else is a complaint
+	if grep -vE '^debugfs[ :]|^Allocated inode|^$' "$OUT/debugfs.log"; then
 		die "debugfs reported problems, see $OUT/debugfs.log"
 	fi
 	e2fsck -fn "$p2"
@@ -267,6 +331,7 @@ step_image() {
 		echo "repo:     $(git -C "$REPO" describe --always --dirty)"
 		echo "kernel:   $rel ($KERNEL_TAG + $(git -C "$KSRC" rev-list --count "$KERNEL_TAG"..HEAD) patches)"
 		echo "firmware: amp ${THREADX_BASE:0:7} + $(git -C "$TX" rev-list --count "$THREADX_BASE"..HEAD) patches"
+		echo "usb:      $USB_MODE"
 		echo "base:     $STOCK_NAME"
 	} > "$OUT/manifest.txt"
 	cat "$OUT/manifest.txt" "$img.sha256"
@@ -274,8 +339,8 @@ step_image() {
 }
 
 steps=("$@")
-[ ${#steps[@]} -eq 0 ] && steps=(fetch kernel rtos bench image)
+[ ${#steps[@]} -eq 0 ] && steps=(fetch kernel rtos bench adbd image)
 for s in "${steps[@]}"; do
-	declare -F "step_$s" >/dev/null || die "unknown step '$s' (fetch kernel rtos bench image)"
+	declare -F "step_$s" >/dev/null || die "unknown step '$s' (fetch kernel rtos bench adbd image)"
 	"step_$s"
 done

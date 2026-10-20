@@ -86,7 +86,7 @@ bench/vendor-5.10/
                   vendor 5.10 userspace 工具（pingpong、LED、RTT bench、decomp4、decomp4_stamp、rtt.py）
 bench/data/vendor-5.10/
                   vendor 5.10 數據（Jeremy Lu，10k 筆 CSV ×2 + 分解圖）
-board/            板端開機鏈 scripts（S05modules/S97adb/S98cvirtos/S99user、usb-adb.sh）、
+board/            板端開機鏈 scripts（S97adb/S98cvirtos/S99user、usb-adb.sh、run_usb.sh）、
                   boot.its（FIT）、驗證過的 kernel .config
 scripts/          build-image.sh（建置 SD 映像）、run-board-tests.sh（上板測試）
 docs/             工程筆記（含完整除錯歷程與翻案記錄）
@@ -98,11 +98,12 @@ docs/             工程筆記（含完整除錯歷程與翻案記錄）
 
 ```sh
 sudo apt install -y git curl unzip build-essential flex bison bc xz-utils u-boot-tools \
-    mtools e2fsprogs fdisk cmake ninja-build python3 kmod openssh-client
+    mtools e2fsprogs fdisk cmake ninja-build python3 kmod openssh-client \
+    patch perl rsync wget cpio file adb
 scripts/build-image.sh
 ```
 
-腳本依序執行 `fetch kernel rtos bench image`，也可以只跑其中幾步（例如 `scripts/build-image.sh kernel image`）：
+腳本依序執行 `fetch kernel rtos bench adbd image`，也可以只跑其中幾步（例如 `scripts/build-image.sh kernel image`）：
 
 | 步驟 | 內容 |
 |---|---|
@@ -110,7 +111,8 @@ scripts/build-image.sh
 | `kernel` | 用 `board/linux7x-boot-verified.config` 編 Image、DTB、模組，依 `board/boot.its` 打包 `boot.sd`（載入位址 0x82000000） |
 | `rtos` | 編 C906L 韌體 `cvirtos.elf` |
 | `bench` | 以 static musl、`-march=rv64imafdc` 編 `bench/` 的 4 支工具 |
-| `image` | 以官方映像為底：換掉第一分割區的 `boot.sd`；rootfs 加入模組、`/lib/firmware/cvirtos.elf`、`board/S05modules`、`board/S98cvirtos`、`/root/bench/`、root 的 SSH 公鑰 |
+| `adbd` | 用 buildroot 2024.02.13（驗 sha256）的 android-tools 編 static、`rv64imafdc` 的 adbd，與 SDK 內建的是同一份 4.2.2 原始碼 |
+| `image` | 以官方映像為底：換掉第一分割區的 `boot.sd`；rootfs 加入模組、`/lib/firmware/cvirtos.elf`、`board/S98cvirtos`、adbd、`board/run_usb.sh`、`board/usb-adb.sh`（`usb.sh` 依 `DUO_USB` 指向 ADB 或 NCM）、`/root/bench/`、root 的 SSH 公鑰 |
 
 產出在 `build/out/duo256m-mainline-<kernel release>.img`（附 `.sha256` 與 `manifest.txt`）。
 可用環境變數調整：`DUO_BUILD_DIR`（工作目錄，預設 `build/`）、`DUO_HOST_TOOLS`（沿用既有的 host-tools）、
@@ -118,8 +120,12 @@ scripts/build-image.sh
 
 注意：
 - userspace 工具不能用 SDK 預設的 `-march=...v0p7xthead`：mainline 沒開 C906 的 T-Head vector 0.7，會 SIGILL。
-- 官方映像沒有 adbd，板子改用 USB NCM 網路（板端 192.168.42.1，DHCP 配位址給主機）＋ dropbear SSH；
-  mainline 把 USB gadget 編成模組，由 `S05modules` 在開機時載入。
+- 開機時的 USB 由 `DUO_USB` 決定：`adb`（預設，與 2026-07 的工作流程相同，`adb shell`／`adb push`）
+  或 `ncm`（USB 網路，板端 192.168.42.1，dnsmasq 用 DHCP 配位址給主機，dropbear SSH）。
+  官方映像本身沒有 adbd，由 `adbd` 步驟補上。NCM＋ADB 複合 gadget 能列舉，但 NCM 從板子送往主機的
+  封包到不了，原因未解，所以二選一。
+- `board/linux7x-boot-verified.config` 是 2026-07-15 那顆實際開機的 kernel 內嵌的 config（`/proc/config.gz`
+  同源）：USB gadget 整組編進 kernel（`=y`），adbd 用的 functionfs 開機就在，不需要載模組。
 
 ### 燒卡與上板測試
 
@@ -132,9 +138,9 @@ sudo dd if=build/out/duo256m-mainline-<release>.img of=/dev/disk/by-id/<讀卡�
 scripts/run-board-tests.sh
 ```
 
-`run-board-tests.sh` 經 SSH 檢查 remoteproc 與 dmesg、跑 pingpong（含韌體 stop/start 後再跑一次）、
+`run-board-tests.sh` 經 ADB（偵測到裝置時）或 SSH 檢查 remoteproc 與 dmesg、跑 pingpong（含韌體 stop/start 後再跑一次）、
 RTT、分段量測與 payload sweep，結果存在 `build/results/<時間>/`，全部通過才回傳 0。
-量測輸出先寫在板子的 `/tmp` 再取回，避免 SSH 傳輸干擾延遲尾巴。
+量測輸出先寫在板子的 `/tmp` 再取回，避免 USB 傳輸干擾延遲尾巴。
 2026-10-20 的實測：pass 8/8，分段 RTT p50 127.3µs / p99 182µs，payload 4→480B 128.9→138.9µs。
 
 vendor 5.10 對照組：
