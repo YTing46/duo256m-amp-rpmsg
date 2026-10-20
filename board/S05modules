@@ -1,9 +1,0 @@
-#!/bin/sh
-# S05modules - mainline builds the USB gadget stack as modules; load the
-# core so /mnt/system/usb.sh (configfs NCM) can create its gadget.
-case "$1" in
-start|"")
-	modprobe libcomposite
-	modprobe usb_f_ncm
-	;;
-esac
