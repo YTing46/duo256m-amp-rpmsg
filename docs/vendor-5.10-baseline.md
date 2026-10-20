@@ -150,7 +150,10 @@ b2_sched_raw、b2b_raw、b_cb_done_raw），`/proc/cvi_rpmsg_probe` 變成 9 欄
   成功後才改名成 `rtt_decomp4_stamp.csv`，失敗的執行不會覆寫上一份數據。
 - s1 每次 mailbox ISR 都會被覆寫。過期但數值合理的 s1 從回覆本身看不出來，這是這個方法的限制。
 
-## 數據（本板 vendor 5.10，Jeremy Lu，2026-06）
+## 數據（vendor 5.10，Jeremy Lu，2026-06）
+
+完整的量測過程與 decomp5 結果（只有統計表，沒有原始 CSV）在 Jeremy 的
+[HackMD 筆記](https://hackmd.io/ei4rzk-OQfOreOa5fG2eKQ)。
 
 | 檔案 | 工具 | payload | 樣本 | p50 | p90 | p99 | max |
 |---|---|---|---|---|---|---|---|
@@ -192,10 +195,11 @@ decomp4 分段（µs）：
 | 交付 + 喚醒 | callback 46.8 | wake 64.6 | |
 | **RTT p50** | **105.8** | **127.6** | |
 
-以本板 decomp4 為基準，mainline 終態慢 21.8µs。差距集中在交付＋喚醒（+17.8）
+以 Jeremy 的 decomp4 為基準，mainline 終態慢 21.8µs。差距集中在交付＋喚醒（+17.8）
 與送出＋傳輸（+14.7）；中斷到派發這一段 mainline 反而少了 12.1µs。
-README 與 `linux7-migration.md` 的「距 vendor 13.6µs」是對 Henry 基線
-（decomp5，32B）的 114.0µs 計算的，不是這份數據。
+README 與 `linux7-migration.md` 提到的「慢 13.6µs」是對 Jeremy 的 decomp5（32B）114.0µs
+計算的，不是這份數據。vendor 端帶探針的 RTT p50 隨探針組與輪次落在 105.8–130.4µs
+（decomp4 105.8、decomp5 32B 114.0、decomp5 主輪 130.4）。
 
 若改用做法 B 的韌體與 `rpmsg_rtt_decomp4_stamp` 重量 vendor 端，小核那一段就和 mainline
 用同一組 s1/s3 時間戳、同一個 turnaround 定義，可以直接對比；mainline 韌體另外套了
@@ -208,8 +212,8 @@ README 與 `linux7-migration.md` 的「距 vendor 13.6µs」是對 Henry 基線
    Jeremy Lu 本機。要重現 `rtt_decomp4.csv` 本身，仍需要他推到 ThreadX fork，
    再補一個 submodule URL 的 patch。只需要 vendor 端的分段數據的話，可以改用做法 B
    加 `rpmsg_rtt_decomp4_stamp`，但那是新的一組數據，不是 `rtt_decomp4.csv` 的重現。
-2. **decomp5 工具與數據缺席。** kernel 已輸出 9 欄，但讀取它的 userspace 工具與
-   結果都不在任何 repo 裡。
+2. **decomp5 工具與原始數據缺席。** kernel 已輸出 9 欄，但讀取它的 userspace 工具與
+   原始 CSV 都不在任何 repo 裡；只有 HackMD 上的統計表（含 32→496B payload sweep）。
 3. **`rtos_cmdqu_handler` 原型。** `0009` 把它改成 variadic
    `(unsigned char cmd_id, ...)`，但 `rtos_cmdqu.c` 仍以固定三參數的
    `irq_request_func` 呼叫它。這在 C 語意上屬未定義行為；RV64 LP64 呼叫慣例下

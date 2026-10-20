@@ -376,7 +376,7 @@ devmem 直讀 mailbox MMIO：`en2=int2=raw2=0x1F`——五個中斷 **pending + 
 
 - **Bug #3（edge-latch 開機樂透）根因定位並修復驗證（§4d）**：故意重現觸發情境驗證，commit b1d7c64。
 - **Task 5 延遲量測與第一輪優化完成（§7）**：decomp 拆解體系建立，155→~133µs（-14%），A1/B2 落地 commit。
-- **Payload sweep 完成（§7.4）**：韌體支援 496B 可變長 echo（ff51694），4→496B 曲線 152→162µs（+6.6%），成長全在 host wake（+6.4µs）與韌體 memcpy（+2.0µs），transport 持平；斜率比 Henry 平（+10.1 vs +17.9µs），常數項仍輸 ~30µs。
+- **Payload sweep 完成（§7.4）**：韌體支援 496B 可變長 echo（ff51694），4→496B 曲線 152→162µs（+6.6%），成長全在 host wake（+6.4µs）與韌體 memcpy（+2.0µs），transport 持平；斜率比 vendor（Jeremy Lu decomp5）平（+10.1 vs +17.9µs），常數項仍輸 ~30µs。
 - **Upstream remoteproc 打通 + SEC_SYS clock 根因修復（§8）**：Junhui Liu v2 系列上板
   （+3 個 review 修正），adb 暴斃事件三層翻案到底——真根因是 `clk_efuse` 被
   `clk_disable_unused` 關掉、SEC_SYS 任何存取懸死整板（一行 devmem 重現）；
@@ -405,7 +405,10 @@ devmem 直讀 mailbox MMIO：`en2=int2=raw2=0x1F`——五個中斷 **pending + 
 
 ## 7. 延遲量測與優化（Task 5，2026-07-07）
 
-方法採 HenryChaing 同款（HackMD: ei4rzk-OQfOreOa5fG2eKQ），對照他在 vendor 5.10 上的數據。原則：**先量測、再優化、再回量**，每一步有數字背書。
+方法採 Jeremy Lu 同款（HackMD: ei4rzk-OQfOreOa5fG2eKQ），對照他在 vendor 5.10 上的數據。原則：**先量測、再優化、再回量**，每一步有數字背書。
+
+> 2026-10-20 更正：本節原本把這份 HackMD 與其中的 vendor 5.10 數據記為 HenryChaing 的，
+> 實際執行人是 Jeremy Lu（jeremylu0830）。以下的 vendor 數字一律改標為 Jeremy Lu。
 
 ### 7.1 量測體系
 
@@ -414,14 +417,14 @@ devmem 直讀 mailbox MMIO：`en2=int2=raw2=0x1F`——五個中斷 **pending + 
   - kernel：b1/b1_done（notify 前後）、b2（echo IRQ 進入）、b2b（派發 handler 開始），經 `/proc/rpmsg_rtt` 匯出；
   - 韌體：s1（mailbox ISR 進入）、s3（echo 送出前），rdtime 打戳，**24B echo 帶回**（舊 4B pingpong 相容，char-dev read 自動截斷）；
   - 跨核時基：兩顆 C906 的 time CSR 同為 25MHz，**正向+反向 transport 相加消掉 inter-CLINT offset**；每筆帶 residual 自洽檢查。
-- 前置必修：拔掉韌體熱路徑 printf（每行 ~3ms @124000——Henry 也踩過同一坑，2ms→75µs）。
+- 前置必修：拔掉韌體熱路徑 printf（每行 ~3ms @124000——Jeremy 也踩過同一坑，2ms→75µs）。
 - 觀測開銷：探針全開比素身 bench 高 ~17µs（24B uncached echo + 打戳），decomp 數據只跟 decomp 數據比。
 
 ### 7.2 Baseline 與分解
 
 | 配置 | RTT p50（10k 筆，4B）|
 |---|---|
-| Henry（vendor 5.10）| 75 µs |
+| Jeremy Lu（vendor 5.10，素身 bench）| 75 µs |
 | 本板 5.10 對照（同 u-boot 同時脈）| ~105 µs |
 | **mainline 7.0 起點** | **155 µs** |
 
@@ -457,11 +460,11 @@ devmem 直讀 mailbox MMIO：`en2=int2=raw2=0x1F`——五個中斷 **pending + 
 - **turnaround +2.0**：韌體端兩次 memcpy（rx 進 buffer、tx 進 vring），~4ns/B，符合 C906L 走 uncached 共享記憶體的預期。
 - transport / notify / workwait / syscall_in：**全部持平**——傳輸本體（mailbox kick + vring 指標操作）與 payload 大小無關，設計上就該如此，數據證實。
 
-對照 Henry（vendor 5.10，decomp5）：32B 114.0 → 496B 131.8（**+17.9µs**），成長也集中在 Linux 收訊側（他歸因 +12µs 在 RX callback）。兩邊曲線同形——**常數項我們還輸 ~30-38µs（host RX 路徑），但斜率我們反而平（+10.1 vs +17.9）**，B2 的 cached buffer 在大 payload 這裡兌現了價值；gap 從 4B 的 38µs 收斂到 496B 的 30µs。
+對照 Jeremy Lu（vendor 5.10，decomp5）：32B 114.0 → 496B 131.8（**+17.9µs**），成長也集中在 Linux 收訊側（他歸因 +12µs 在 RX callback）。兩邊曲線同形——**常數項我們還輸 ~30-38µs（host RX 路徑），但斜率我們反而平（+10.1 vs +17.9）**，B2 的 cached buffer 在大 payload 這裡兌現了價值；gap 從 4B 的 38µs 收斂到 496B 的 30µs。
 
 ### 7.5 現況與下一步
 
-**累計：155 → ~133µs（-14%）**。剩餘目標（decomp p50）：wake 62.7（最大塊，需 decomp5 級細拆 recv_done/派發/喚醒；payload sweep 顯示它幾乎全是常數開銷，不是 copy）、workwait 28.5（rtos_cmdqu ISR 尾段在硬體鎖下的 slot 排空）、transport 25.4（vs Henry 17.2）、384→416B 的 wake 階梯跳變成因。
+**累計：155 → ~133µs（-14%）**。剩餘目標（decomp p50）：wake 62.7（最大塊，需 decomp5 級細拆 recv_done/派發/喚醒；payload sweep 顯示它幾乎全是常數開銷，不是 copy）、workwait 28.5（rtos_cmdqu ISR 尾段在硬體鎖下的 slot 排空）、transport 25.4（vs Jeremy 17.2）、384→416B 的 wake 階梯跳變成因。
 
 數據存檔：`report/current-7.0-fixed/`（baseline、rtkthread、b2cached 三份 10k CSV + summary、`rtt_payload_sweep.csv` 17 檔×2000 筆）。
 
@@ -789,13 +792,13 @@ callback）——threaded handler 純屬浪費。把收訊直送搬進硬中斷
 
 | 版本 | RTT 4B p50 | p99 |
 |---|---|---|
-| vendor 5.10（Henry） | 114.0 | — |
+| vendor 5.10（Jeremy Lu，decomp5，32B） | 114.0 | — |
 | glue 優化版 | 152.0 | — |
 | native ACK 模式 | 164.0 | 220 |
 | **native hard-IRQ 直送** | **127.6** | **178** |
 
 wwait 27.8 → 1.7µs，**100% upstream 架構反超手工 glue 24.4µs**，
-距 vendor 5.10 只剩 13.6µs；穩定性 1000/1000。
+比 Jeremy 的 vendor 5.10 decomp5（32B）慢 13.6µs、比 decomp4（8B，105.8）慢 21.8µs；穩定性 1000/1000。
 
 ### 10.6 收尾三題：正確性自首、two-stage sync、p99 尾巴
 
@@ -825,9 +828,11 @@ context 時，整條下游路徑的 sleeping 原語都要重新審計**——「
   或 driver 至少一方該防呆）；修掉後 native 路徑淨賺 12.4µs。
 - 「標準框架必然比手工 glue 慢」被推翻：架構稅其實集中在兩個
   可修的點（poll hrtimer 風暴、多餘的 threaded handler），修完後
-  upstream 架構反而快 24µs。剩餘與 vendor 的 13.6µs 差距組成：
+  upstream 架構反而快 24µs。主線各段 p50：
   sched 28.6（使用者行程喚醒的本質成本）、deliver 22.8、
-  transport 26.9、sysin 20.4——每一微秒都有歸屬，沒有未解之謎。
+  transport 26.9、sysin 20.4。與 vendor 的差距（對 decomp5 32B 為 13.6µs、
+  對 decomp4 為 21.8µs）落在這些段落裡，但 vendor 那邊的探針組與量測輪次不同，
+  不宜逐段相減（見 `docs/vendor-5.10-baseline.md`）。
 
 ---
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * rpmsg_rtt_bench: RPMsg round-trip latency benchmark (Henry's method).
+ * rpmsg_rtt_bench: RPMsg round-trip latency benchmark (Jeremy Lu's method).
  *
  * Path measured: userspace write(/dev/rpmsgN) -> virtio vring -> mailbox
  * kick -> C906L ThreadX echo -> vring -> mailbox kick -> userspace read().

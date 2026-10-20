@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * rpmsg_rtt_decomp: RTT decomposition benchmark (Henry's decomp4 method).
+ * rpmsg_rtt_decomp: RTT decomposition benchmark (Jeremy Lu's decomp4 method).
  *
  * Per iteration, the RTT is split into segments from three probe layers:
  *   userspace : t0 (before write), t1 (after read), CLOCK_MONOTONIC

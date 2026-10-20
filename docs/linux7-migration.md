@@ -43,7 +43,7 @@ kernel patch 系列（v7.0-rc6 起 24 個 patch，可完整重現）與韌體修
 
 | 平台 | 4B | 480–496B | payload 斜率 |
 |---|---|---|---|
-| vendor 5.10（Henry 基線） | 114.0 µs | 131.8 µs | +17.9 µs |
+| vendor 5.10（Jeremy Lu，decomp5，**32B**） | 114.0 µs | 131.8 µs | +17.9 µs |
 | mainline 7.0 glue 優化版（cached buffers、RT kthread） | 152.0 µs | 162.1 µs | +10.1 µs |
 | mainline 7.0 全 upstream（hrtimer 風暴修正前） | 176.4 µs | — | — |
 | **mainline 7.0 全 upstream（終態：hrtimer 修正 + hard-IRQ 直送）** | **127.6 µs** | 139.2 µs | +11.6 µs |
@@ -51,11 +51,14 @@ kernel patch 系列（v7.0-rc6 起 24 個 patch，可完整重現）與韌體修
 觀察：
 
 - 全 upstream 架構最初比手工 glue 慢 24µs，逐段分解後定位出兩個**可修的框架成本**
-  （見下方發現 4），修正後 **RTT 反超手工 glue 逾 20µs**，距 vendor 原生只剩 13.6µs；
-- 大 payload 斜率仍優於 vendor（+11.6 vs +17.9 µs）——virtio buffer pool
+  （見下方發現 4），修正後 **RTT 反超手工 glue 逾 20µs**；與 vendor 5.10 相比，
+  比 Jeremy Lu 的 decomp5（32B，114.0µs）慢 13.6µs、比他的 decomp4（8B，105.8µs）慢 21.8µs。
+  vendor 的帶探針 RTT 隨探針組與輪次落在 105.8–130.4µs，127.6µs 在這個範圍內；
+- 大 payload 斜率仍優於 vendor（+11.6 vs Jeremy 的 +17.9 µs）——virtio buffer pool
   從 uncached 改成 cached + 顯式 streaming DMA sync 的效果；
-- 剩餘與 vendor 的差距逐段有主：使用者行程喚醒 ~28.6、deliver ~22.8、
-  transport ~26.9、sysin ~20.4 µs——沒有未解之謎；
+- 主線各段 p50：使用者行程喚醒 ~28.6、deliver ~22.8、transport ~26.9、sysin ~20.4 µs。
+  Jeremy 的 decomp5 有對應的細分段，但量測輪次與分段定義不同，不宜逐段相減
+  （逐段對照見 `docs/vendor-5.10-baseline.md`）；
 - RTT 有 boot-to-boot 變異（127–131µs），量級在量測誤差內。
 
 ### 穩定性
@@ -176,12 +179,12 @@ p99 178µs，反超手工 glue**。此改動需配套整條 rx 路徑的 irq-saf
 
 ## 與 Henry 版的差異總結
 
-| 面向 | Henry（vendor 5.10） | 本專題（mainline 7.0） |
+| 面向 | vendor 5.10（Henry 的堆疊） | 本專題（mainline 7.0） |
 |---|---|---|
 | kernel | vendor SDK | mainline + 24 patches（可重現） |
 | RPMsg 堆疊 | vendor glue | 100% upstream 架構 |
-| RTT 4B p50 | 114 µs | 152 µs（glue 優化版）→ **127.6 µs（全 upstream 終態）** |
-| payload 斜率 | +17.9 µs | +11.6 µs（cached buffers） |
+| RTT p50 | 114.0 µs（Jeremy Lu decomp5，32B）；105.8 µs（decomp4，8B） | 152 µs（glue 優化版）→ **127.6 µs（全 upstream 終態，4B）** |
+| payload 斜率 | +17.9 µs（Jeremy Lu） | +11.6 µs（cached buffers） |
 | 額外產出 | — | 4 個 mainline bug 根因 + 修法、對停滯 rproc 系列的 review 與真機驗證 |
 
 ## 未竟事項
@@ -202,6 +205,7 @@ p99 178µs，反超手工 glue**。此改動需配套整條 rx 路徑的 irq-saf
 ## 參考資料
 
 - [HenryChaing — Linux 核心專題: 異質多核通訊機制](https://hackmd.io/@sysprog/linux2025-projects)
+- [Jeremy Lu — vendor 5.10 RPMsg RTT 量測與分解](https://hackmd.io/ei4rzk-OQfOreOa5fG2eKQ)（vendor 5.10 延遲數據的出處）
 - [Junhui Liu — remoteproc: Add C906L controller for Sophgo CV1800B SoC (v2)](https://lore.kernel.org/linux-remoteproc/)
 - [milkv-duo/duo-buildroot-sdk-v2 v2.0.1](https://github.com/milkv-duo/duo-buildroot-sdk-v2/releases/tag/v2.0.1)（vendor 參考基線）
 - [本專題完整 repo：patches / 筆記 / 量測數據 / 板端腳本](https://github.com/YTing46/duo256m-mainline-amp)

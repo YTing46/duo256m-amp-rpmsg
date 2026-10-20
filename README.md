@@ -24,23 +24,26 @@ Milk-V Duo256M（SG2002，雙 C906 AMP）的異質多核通訊機制移植：
 | RTT 分解量測 + payload sweep 對照 vendor | ✅ |
 | **RPMsg 100% upstream 化**（remoteproc vdev + cv1800-mailbox，glue 退役） | ✅（300/300，**127.6µs**——反超手工 glue） |
 | mainline bug ×4：clk_efuse 依賴、mailbox EN 覆寫、rproc_virtio dma_coherent、mailbox txpoll hrtimer 風暴 | ✅ 皆附修法 |
-| vendor 5.10 對照組：SDK patch series（套在 v2.0.1）+ 本板 RTT 分解數據 | ✅（Jeremy Lu 量測，10k 筆） |
+| vendor 5.10 對照組：SDK patch series（套在 v2.0.1）+ RTT 分解數據 | ✅（Jeremy Lu 量測，10k 筆） |
 
 ### 延遲數據（RTT p50）
 
 | 平台 | 4B | 480–496B | payload 斜率 |
 |---|---|---|---|
-| vendor 5.10（Henry 基線） | 114.0µs | 131.8µs | +17.9µs |
+| vendor 5.10（Jeremy Lu，decomp5，**32B**） | 114.0µs | 131.8µs | +17.9µs |
 | mainline 7.0 glue 優化版（cached buffers + RT kthread） | 152.0µs | 162.1µs | +10.1µs |
 | mainline 7.0 全 upstream（修正前） | 176.4µs | — | — |
 | **mainline 7.0 全 upstream（終態：txdone-by-ACK + hard-IRQ 直送）** | **127.6µs** | 139.2µs | +11.6µs |
 
-註：本板 vendor 5.10 實測（Jeremy Lu，decomp4 探針版，8B 訊息）RTT p50 為 105.8µs，
-素身 bench（4B）為 75.3µs。兩者的探針組都與上表不同，逐段對照見 `docs/vendor-5.10-baseline.md`。
+註：vendor 5.10 的數字全部來自 Jeremy Lu 的量測（[HackMD](https://hackmd.io/ei4rzk-OQfOreOa5fG2eKQ)，
+decomp4 與素身 bench 的原始數據在 `bench/data/vendor-5.10/`）。帶分解探針的 RTT p50 隨探針組與量測輪次
+落在 105.8–130.4µs：decomp4（8B）105.8、decomp5 payload sweep（32B）114.0、decomp5 主輪 130.4；
+不帶探針的素身 bench（4B）為 75.3µs。mainline 終態的 127.6µs 也是帶探針的數字，
+比 decomp5 32B 慢 13.6µs、比 decomp4 慢 21.8µs。逐段對照見 `docs/vendor-5.10-baseline.md`。
 
 全 upstream 架構最初比手工 glue 慢 24µs，逐段分解後定位出兩個可修的
 mainline 框架成本（mailbox poll hrtimer 空轉、threaded IRQ 排程來回），
-修正後**反超手工 glue 逾 20µs**，距 vendor 原生僅剩 13.6µs；
+修正後**反超手工 glue 逾 20µs**，落在 vendor 5.10 帶探針量測的範圍內（見上註）；
 p99 尾巴 301 → 178µs（殘餘尾巴經機率驗證為 kernel timer tick，非 bug）。
 大 payload 斜率仍優於 vendor（cached buffers + streaming DMA sync 的效果）。
 原始分解數據見 `bench/data/native-*.csv`（修正前 / ACK / hard-IRQ 三組），
@@ -82,7 +85,7 @@ bench/            RTT 量測工具（總量/分解/payload sweep）+ CSV 數據
 bench/vendor-5.10/
                   vendor 5.10 userspace 工具（pingpong、LED、RTT bench、decomp4、decomp4_stamp、rtt.py）
 bench/data/vendor-5.10/
-                  vendor 5.10 本板數據（10k 筆 CSV ×2 + 分解圖）
+                  vendor 5.10 數據（Jeremy Lu，10k 筆 CSV ×2 + 分解圖）
 board/            板端開機鏈 scripts（S05modules/S97adb/S98cvirtos/S99user、usb-adb.sh）、
                   boot.its（FIT）、驗證過的 kernel .config
 scripts/          build-image.sh（建置 SD 映像）、run-board-tests.sh（上板測試）
@@ -159,7 +162,8 @@ ThreadX submodule 的兩個 commit 未公開；分段量測改用 `amp`（`49ad3
 
 ## 參考
 
-- [HenryChaing — Linux 核心專題: 異質多核通訊機制](https://hackmd.io/@sysprog/linux2025-projects)（vendor 5.10 基線）
+- [HenryChaing — Linux 核心專題: 異質多核通訊機制](https://hackmd.io/@sysprog/linux2025-projects)（vendor 5.10 原始專題）
+- [Jeremy Lu — vendor 5.10 RPMsg RTT 量測與分解](https://hackmd.io/ei4rzk-OQfOreOa5fG2eKQ)（decomp4／decomp5，vendor 5.10 延遲數據的出處）
 - [Junhui Liu — remoteproc: Add C906L controller for Sophgo CV1800B SoC (v2)](https://lore.kernel.org/linux-remoteproc/)（upstream driver 素材）
 - [milkv-duo/duo-buildroot-sdk-v2 v2.0.1](https://github.com/milkv-duo/duo-buildroot-sdk-v2/releases/tag/v2.0.1)（vendor 參考基線：FSBL、5.10 驅動對照）
 - [NCKU jserv Linux 核心設計課程](https://wiki.csie.ncku.edu.tw/linux/schedule)

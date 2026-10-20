@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * rpmsg_rtt_payload: RTT vs payload-size sweep (Henry's payload curve).
+ * rpmsg_rtt_payload: RTT vs payload-size sweep (Jeremy Lu's decomp5 payload curve).
  *
  * For each payload size (default 4, then 32..496 step 32 -- 496 is the
  * rpmsg buffer limit: 512B vring buffer minus 16B header), runs
