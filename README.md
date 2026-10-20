@@ -166,12 +166,6 @@ Jeremy Lu 使用的小核韌體修改未公開。如需分段量測，可改用 
 `patches/threadx/0001–0003`，搭配 `bench/vendor-5.10/rpmsg_rtt_decomp4_stamp`。
 `0004–0007` 不適用於原廠 kernel，原因與細節見 `docs/vendor-5.10-baseline.md`。
 
-## 致謝
-
-- HenryChaing：原始專題，以及原廠環境下 ADB、ThreadX、remoteproc、RPMsg 的移植。
-- Jeremy Lu：原廠環境的延遲量測與分段拆解。
-- Junhui Liu：upstream C906L remoteproc 驅動。
-
 ## 參考資料
 
 - [HenryChaing — Linux 核心專題：異質多核通訊機制](https://hackmd.io/@sysprog/linux2025-projects)
