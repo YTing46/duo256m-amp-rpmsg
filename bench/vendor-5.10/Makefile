@@ -36,10 +36,14 @@ RTT_decomp_4_SRC = rpmsg_rtt_decomp4.c
 RTT_decomp_4_TARGET = rpmsg_rtt_decomp4
 RTT_decomp_4_OBJ = $(RTT_decomp_4_SRC:.c=.o)             # rpmsg_rtt_decomp4.o
 
+RTT_decomp_4_STAMP_SRC = rpmsg_rtt_decomp4_stamp.c
+RTT_decomp_4_STAMP_TARGET = rpmsg_rtt_decomp4_stamp
+RTT_decomp_4_STAMP_OBJ = $(RTT_decomp_4_STAMP_SRC:.c=.o)   # rpmsg_rtt_decomp4_stamp.o
+
 
 # Define an 'all' target to build both by default
 .PHONY: all
-all: $(PINGPONG_TARGET) $(LED_TARGET) $(RTT_TARGET) $(RTT_LITTLE_TARGET) $(RTT_decomp_4_TARGET)
+all: $(PINGPONG_TARGET) $(LED_TARGET) $(RTT_TARGET) $(RTT_LITTLE_TARGET) $(RTT_decomp_4_TARGET) $(RTT_decomp_4_STAMP_TARGET)
 
 # Rule to build the pingpong test executable
 $(PINGPONG_TARGET): $(PINGPONG_OBJ)
@@ -58,6 +62,9 @@ $(RTT_LITTLE_TARGET): $(RTT_LITTLE_OBJ)
 $(RTT_decomp_4_TARGET): $(RTT_decomp_4_OBJ)
 	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
+$(RTT_decomp_4_STAMP_TARGET): $(RTT_decomp_4_STAMP_OBJ)
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 
 # Generic rule to compile .c files into .o files
 # This rule will apply to both pingpong and led source files
@@ -66,6 +73,6 @@ $(RTT_decomp_4_TARGET): $(RTT_decomp_4_OBJ)
 
 .PHONY: clean
 clean:
-	@rm -f $(PINGPONG_OBJ) $(LED_OBJ) $(RTT_OBJ) $(RTT_LITTLE_OBJ) $(RTT_decomp_4_OBJ)
-	@rm -f $(PINGPONG_TARGET) $(LED_TARGET) $(RTT_TARGET) $(RTT_LITTLE_TARGET) $(RTT_decomp_4_TARGET)
+	@rm -f $(PINGPONG_OBJ) $(LED_OBJ) $(RTT_OBJ) $(RTT_LITTLE_OBJ) $(RTT_decomp_4_OBJ) $(RTT_decomp_4_STAMP_OBJ)
+	@rm -f $(PINGPONG_TARGET) $(LED_TARGET) $(RTT_TARGET) $(RTT_LITTLE_TARGET) $(RTT_decomp_4_TARGET) $(RTT_decomp_4_STAMP_TARGET)
 

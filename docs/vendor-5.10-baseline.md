@@ -29,15 +29,57 @@ git am /path/to/duo256m-mainline-amp/patches/vendor-sdk/*.patch
 
 整串套在 v2.0.1 上之後，tree 與 `milkv_sdk@8fd17ca` 完全相同（已比對 tree hash）。
 
+### ThreadX（C906L 韌體）
+
 ThreadX 是 submodule（[HenryChaing/ThreadX-to-RISC-V64](https://github.com/HenryChaing/ThreadX-to-RISC-V64)，`amp` 分支），
 但 `0010` / `0011` 指向的 `f0d2c71` / `5bfc09f` 不在任何公開 repo 上，
-`git submodule update` 會失敗。目前只能改用 `amp` 分支頭（`49ad38f`，即 `0007` 指向的版本）：
+`git submodule update` 會失敗。改從 `amp` 分支頭 `49ad38f` 起手。這個 commit 同時是：
+
+- `patches/vendor-sdk/0007` 把 submodule 指向的版本（Jeremy 的改動之前）；
+- 本 repo `patches/threadx/` 全部 7 個 patch 的基底（已用 `git am` 驗證）。
+
+也就是說，vendor 和 mainline 兩條線的韌體出自同一個基底，差別只在上面疊了哪些 patch。
 
 ```sh
 git clone -b amp https://github.com/HenryChaing/ThreadX-to-RISC-V64.git threadx
+git -C threadx checkout 49ad38fbd540c9709e322abd38f520218e5beaf9   # 固定版本，amp 之後若前進也不受影響
 ```
 
-這個版本沒有 decomp4 需要的 turnaround 樁（見[已知缺口](#已知缺口)）。
+| 做法 | 韌體 | 能跑的工具 |
+|---|---|---|
+| A：原版 | `49ad38f`，不加 patch | `mailbox_pingpong`、`mailbox_led`、`rpmsg_rtt_bench` |
+| B：帶時間戳 | `49ad38f` + `patches/threadx/0001–0003` | 以上全部，加上 `rpmsg_rtt_decomp4_stamp` |
+
+做法 B：
+
+```sh
+git -C threadx am /path/to/duo256m-mainline-amp/patches/threadx/000[1-3]-*.patch
+```
+
+- `0001`：開 mailbox 中斷之前先清掉殘留的狀態；
+- `0002`：拿掉熱路徑上的 printf，回覆改成 24B，帶回 s1（mailbox ISR 進入）與
+  s3（`rpmsg_lite_send` 之前）兩個 `rdtime` 時間戳；
+- `0003`：回覆長度跟著請求（最多 496B，前 24B 照帶時間戳），小於 24B 的請求一律回 24B。
+
+三個 patch 只改 `cvitek/task/comm/src/riscv64/comm_main.c`，送回 Linux 的 mailbox kick
+編碼與原版相同。
+
+**不要套 `0004–0007`。** 以下是讀程式碼的推論，沒有上板驗證：
+
+- `cmdqu_t` 的第 2 個 byte 是 `cmd_id:7` + `block:1`。原版韌體的 `mailbox_send()`
+  設 `block = 0`；`0004` 的 `platform_notify()` 直接寫 `((vq & 1) + 128) << 8`，
+  把 `block` 設成 1。
+- vendor kernel 的 `rtos_irq_handler()`（`patches/vendor-sdk/0004`）遇到
+  `rtos_valid == 1 && block == 1` 只會去喚醒 `rtos_cmdqu_send_wait()` 的等待者，
+  不會呼叫 RPMsg glue 註冊的 `rtos_cmdqu_handler()`，host 因此永遠不處理 virtqueue。
+  `patches/linux/0001` 移植的 glue 也是同一段判斷。
+- `0005` 改寫的正是 `0004` 的 `platform_notify()`，`0006`、`0007` 疊在它們上面，
+  所以整段 `0004–0007` 都不適用。
+- `0004` 加的 resource table 不是問題：vendor remoteproc 把 `parse_fw` 設成 `NULL`
+  （`patches/vendor-sdk/0003`），不會讀它。
+
+`0004` 的 commit message 說仍相容 vendor `rtos_cmdqu` 的 host ISR，那只考慮了 slot 掃描，
+沒有考慮 block 位元。
 
 SDK 建置流程照上游 README（`./build.sh lunch`，選 `milkv-duo256m-musl-riscv64-sd`）；
 `0008` 在 SDK 根目錄加了 `step_by_step_compilation.sh`（分步建置的環境設定）與
@@ -58,8 +100,9 @@ make -C /path/to/duo256m-mainline-amp/bench/vendor-5.10
 | `mailbox_pingpong` | HenryChaing | 16 回合 pingpong 通訊驗證 | – |
 | `mailbox_led` | HenryChaing | 經 RPMsg 設定小核 LED 閃爍週期 | – |
 | `rpmsg_rtt_bench` | Jeremy Lu | 素身 RTT（write → poll → read），4B × 10k → `rtt_samples.csv` | – |
-| `rpmsg_little_core_cost` | Jeremy Lu | RTT 扣掉小核 turnaround → `rtt_decomp.csv` | 韌體 turnaround 樁 |
-| `rpmsg_rtt_decomp4` | Jeremy Lu | 四段拆解 → `rtt_decomp4.csv` | `0008`+ 的 kernel 探針、韌體 turnaround 樁 |
+| `rpmsg_little_core_cost` | Jeremy Lu | RTT 扣掉小核 turnaround → `rtt_decomp.csv` | Jeremy 版韌體的 8B turnaround 樁（未公開） |
+| `rpmsg_rtt_decomp4` | Jeremy Lu | 四段拆解 → `rtt_decomp4.csv` | `0008`+ 的 kernel 探針、Jeremy 版韌體的 8B turnaround 樁（未公開） |
+| `rpmsg_rtt_decomp4_stamp` | YTing46（改自 decomp4） | 同樣的四段拆解，turnaround 改用韌體 s1/s3 時間戳 → `rtt_decomp4_stamp.csv`（`rtt.py` 可直接讀） | `0008`+ 的 kernel 探針、做法 B 的韌體 |
 | `rtt.py` | Jeremy Lu | 分析 `rtt_decomp4.csv`、輸出三張圖 | numpy、matplotlib |
 
 這裡的工具寫死 vendor 的 channel 名稱 `rpmsg-openamp-demo-channel`（0x1e）；
@@ -90,6 +133,22 @@ b2_sched_raw、b2b_raw、b_cb_done_raw），`/proc/cvi_rpmsg_probe` 變成 9 欄
 前 5 欄與舊格式相容，decomp4 只讀前 3 欄，所以仍可使用。這組時間戳與韌體 `rdtime`
 同源，用途和 mainline 版 `rpmsg_rtt_decomp.c` 相同：把 transport 拆成正反兩段直接量測。
 對應的 decomp5 userspace 工具與數據沒有在任何 repo 裡。
+
+### decomp4_stamp 的差異
+
+`rpmsg_rtt_decomp4_stamp` 的探針、分段公式和 CSV 欄位都與 decomp4 相同，只有小核那段不同：
+
+- turnaround = (s3 − s1) × 40 ns，s1 = mailbox ISR 進入，s3 = `rpmsg_lite_send` 之前。
+  Jeremy 版樁的位置未公開，所以 turnaround（以及由殘差算出的 transport）不能假設與
+  `rtt_decomp4.csv` 同定義，要當成另一組數據。
+- 請求 8B（同 decomp4），回覆 24B（decomp4 是 8B），多出的 16B 會反映在韌體與 host 的 copy 成本上。
+- 丟棄樣本的規則：順序錯位（同 decomp4）；時間戳無效（長度不是 24B、沒有 magic、s3 < s1、
+  換算溢位）；turnaround 超出 b1 到 b2 之間的時間（s1 是更早的 ISR 留下的）。兩類分開計數並印出。
+  因為 turnaround 不會超過 b2 − b1，transport 殘差不需要像 decomp4 那樣在負值時夾成 0。
+  暖機的第一筆回覆如果沒有時間戳，直接中止並提示韌體要套哪些 patch。
+- 只有量測完成且 CSV 完整寫出才回傳 0。CSV 先寫到同目錄下用 `mkstemp` 建立的暫存檔，
+  成功後才改名成 `rtt_decomp4_stamp.csv`，失敗的執行不會覆寫上一份數據。
+- s1 每次 mailbox ISR 都會被覆寫。過期但數值合理的 s1 從回覆本身看不出來，這是這個方法的限制。
 
 ## 數據（本板 vendor 5.10，Jeremy Lu，2026-06）
 
@@ -138,12 +197,17 @@ decomp4 分段（µs）：
 README 與 `linux7-migration.md` 的「距 vendor 13.6µs」是對 Henry 基線
 （decomp5，32B）的 114.0µs 計算的，不是這份數據。
 
+若改用做法 B 的韌體與 `rpmsg_rtt_decomp4_stamp` 重量 vendor 端，小核那一段就和 mainline
+用同一組 s1/s3 時間戳、同一個 turnaround 定義，可以直接對比；mainline 韌體另外套了
+`0004–0007`，kick 路徑仍然不同。
+
 ## 已知缺口
 
-1. **ThreadX 側修改未公開。** decomp4 / little_core_cost 依賴的 turnaround 樁，
+1. **Jeremy 的 ThreadX 修改未公開。** decomp4 / little_core_cost 依賴的 8B turnaround 樁，
    以及 `0010` / `0011` 的 submodule commit（`f0d2c71`、`5bfc09f`），都只存在
-   Jeremy Lu 本機。要完整重現 vendor 分解，需要把它推到 ThreadX fork，
-   再補一個 submodule URL 的 patch。
+   Jeremy Lu 本機。要重現 `rtt_decomp4.csv` 本身，仍需要他推到 ThreadX fork，
+   再補一個 submodule URL 的 patch。只需要 vendor 端的分段數據的話，可以改用做法 B
+   加 `rpmsg_rtt_decomp4_stamp`，但那是新的一組數據，不是 `rtt_decomp4.csv` 的重現。
 2. **decomp5 工具與數據缺席。** kernel 已輸出 9 欄，但讀取它的 userspace 工具與
    結果都不在任何 repo 裡。
 3. **`rtos_cmdqu_handler` 原型。** `0009` 把它改成 variadic
@@ -152,3 +216,5 @@ README 與 `linux7-migration.md` 的「距 vendor 13.6µs」是對 Henry 基線
    整數參數同樣走 a0–a2，所以實際能跑。
 4. **探針是全域變數**，前提是同時只有一筆訊息在飛（ping-pong）；b1 只在 TX vq
    （`simple_id == 1`）記錄。
+5. **做法 B 尚未上板驗證。** 目前只確認 `patches/threadx/0001–0003` 能套在 `49ad38f` 上、
+   `rpmsg_rtt_decomp4_stamp` 能編譯，以及上面那段讀程式碼的推論。

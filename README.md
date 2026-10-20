@@ -73,14 +73,14 @@ devm_rproc_add 與手動 rproc_del 的 double-delete），見 `patches/linux/001
 ```
 patches/linux/    24 個 patch：v7.0-rc6 → 完整可跑的 100% upstream 架構 AMP 系統
                   （0009/0010 為 Junhui Liu 的 v2 系列，保留原作者署名）
-patches/threadx/  C906L ThreadX 韌體修改（7 個 patch）（基於 HenryChaing/ThreadX-to-RISC-V64）
+patches/threadx/  C906L ThreadX 韌體修改（7 個 patch）（基於 HenryChaing/ThreadX-to-RISC-V64 amp @ 49ad38f）
 patches/vendor-sdk/
                   vendor 5.10 對照組：11 個 patch，套在 duo-buildroot-sdk-v2 v2.0.1
                   （0001–0007 HenryChaing：ADB/ThreadX/remoteproc/RPMsg glue；
                     0008–0011 Jeremy Lu：RTT 探針）
 bench/            RTT 量測工具（總量/分解/payload sweep）+ CSV 數據
 bench/vendor-5.10/
-                  vendor 5.10 userspace 工具（pingpong、LED、RTT bench、decomp4、rtt.py）
+                  vendor 5.10 userspace 工具（pingpong、LED、RTT bench、decomp4、decomp4_stamp、rtt.py）
 bench/data/vendor-5.10/
                   vendor 5.10 本板數據（10k 筆 CSV ×2 + 分解圖）
 board/            板端開機鏈 scripts（S97adb/S98cvirtos/S99user、usb-adb.sh）、
@@ -107,7 +107,9 @@ git -C duo-buildroot-sdk-v2 am "$PWD"/patches/vendor-sdk/*.patch
 make -C bench/vendor-5.10        # 需先 source duo-examples 的 envsetup.sh
 ```
 
-ThreadX submodule 的兩個 commit 未公開，細節與替代做法見 `docs/vendor-5.10-baseline.md`。
+ThreadX submodule 的兩個 commit 未公開；分段量測改用 `amp`（`49ad38f`）加
+`patches/threadx/0001–0003` 的韌體，搭配 `bench/vendor-5.10/rpmsg_rtt_decomp4_stamp`
+（`0004–0007` 不適用 vendor kernel）。細節見 `docs/vendor-5.10-baseline.md`。
 
 序列埠：板端 console 115200（PL2303 注意 termios2 BOTHER）；C906L console 124000。
 注意這塊板的 warm reboot（`reboot` 指令）會卡在 FSBL，要斷電重上。
