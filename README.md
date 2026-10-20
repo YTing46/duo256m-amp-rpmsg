@@ -83,21 +83,56 @@ bench/vendor-5.10/
                   vendor 5.10 userspace 工具（pingpong、LED、RTT bench、decomp4、decomp4_stamp、rtt.py）
 bench/data/vendor-5.10/
                   vendor 5.10 本板數據（10k 筆 CSV ×2 + 分解圖）
-board/            板端開機鏈 scripts（S97adb/S98cvirtos/S99user、usb-adb.sh）、
+board/            板端開機鏈 scripts（S05modules/S97adb/S98cvirtos/S99user、usb-adb.sh）、
                   boot.its（FIT）、驗證過的 kernel .config
+scripts/          build-image.sh（建置 SD 映像）、run-board-tests.sh（上板測試）
 docs/             工程筆記（含完整除錯歷程與翻案記錄）
 ```
 
-## 重現步驟（摘要）
+## 重現步驟
+
+### 一鍵建置 SD 映像（不需要 root）
 
 ```sh
-# kernel：v7.0-rc6 + patches，riscv64 toolchain
-git checkout v7.0-rc6 && git am patches/linux/*.patch
-cp board/linux7x-boot-verified.config .config   # 含 SOPHGO_CV1800B_C906L=y
-make ARCH=riscv CROSS_COMPILE=riscv64-unknown-linux-gnu- Image dtbs
-lzma -9 -k Image && mkimage -f board/boot.its boot.sd   # load addr 0x82000000
-# boot.sd 放 SD 卡第一分割區；cvirtos.elf（ThreadX）放 rootfs /lib/firmware
+sudo apt install -y git curl unzip build-essential flex bison bc xz-utils u-boot-tools \
+    mtools e2fsprogs fdisk cmake ninja-build python3 kmod openssh-client
+scripts/build-image.sh
 ```
+
+腳本依序執行 `fetch kernel rtos bench image`，也可以只跑其中幾步（例如 `scripts/build-image.sh kernel image`）：
+
+| 步驟 | 內容 |
+|---|---|
+| `fetch` | 下載 v7.0-rc6 並套 `patches/linux`、ThreadX `amp`（`49ad38f`）並套 `patches/threadx`、milkv host-tools 工具鏈（約 7 GB）、SDK v2.0.1 的 `build/`（只用來產生小核記憶體配置）、官方 v2.0.1 SD 映像（驗 sha256），並產生板子用的 SSH 金鑰 |
+| `kernel` | 用 `board/linux7x-boot-verified.config` 編 Image、DTB、模組，依 `board/boot.its` 打包 `boot.sd`（載入位址 0x82000000） |
+| `rtos` | 編 C906L 韌體 `cvirtos.elf` |
+| `bench` | 以 static musl、`-march=rv64imafdc` 編 `bench/` 的 4 支工具 |
+| `image` | 以官方映像為底：換掉第一分割區的 `boot.sd`；rootfs 加入模組、`/lib/firmware/cvirtos.elf`、`board/S05modules`、`board/S98cvirtos`、`/root/bench/`、root 的 SSH 公鑰 |
+
+產出在 `build/out/duo256m-mainline-<kernel release>.img`（附 `.sha256` 與 `manifest.txt`）。
+可用環境變數調整：`DUO_BUILD_DIR`（工作目錄，預設 `build/`）、`DUO_HOST_TOOLS`（沿用既有的 host-tools）、
+`DUO_SSH_PUBKEY`（改用自己的公鑰）、`JOBS`。
+
+注意：
+- userspace 工具不能用 SDK 預設的 `-march=...v0p7xthead`：mainline 沒開 C906 的 T-Head vector 0.7，會 SIGILL。
+- 官方映像沒有 adbd，板子改用 USB NCM 網路（板端 192.168.42.1，DHCP 配位址給主機）＋ dropbear SSH；
+  mainline 把 USB gadget 編成模組，由 `S05modules` 在開機時載入。
+
+### 燒卡與上板測試
+
+```sh
+# 確認讀卡機的裝置路徑（用 by-id 才不會寫錯磁碟），整張卡會被覆寫
+ls -l /dev/disk/by-id/ | grep usb
+sudo dd if=build/out/duo256m-mainline-<release>.img of=/dev/disk/by-id/<讀卡機> bs=4M conv=fsync status=progress
+
+# 卡插上板子、USB-C 接主機開機，約 30 秒後：
+scripts/run-board-tests.sh
+```
+
+`run-board-tests.sh` 經 SSH 檢查 remoteproc 與 dmesg、跑 pingpong（含韌體 stop/start 後再跑一次）、
+RTT、分段量測與 payload sweep，結果存在 `build/results/<時間>/`，全部通過才回傳 0。
+量測輸出先寫在板子的 `/tmp` 再取回，避免 SSH 傳輸干擾延遲尾巴。
+2026-10-20 的實測：pass 8/8，分段 RTT p50 127.3µs / p99 182µs，payload 4→480B 128.9→138.9µs。
 
 vendor 5.10 對照組：
 
