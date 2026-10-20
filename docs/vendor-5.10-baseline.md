@@ -24,7 +24,7 @@
 git clone https://github.com/milkv-duo/duo-buildroot-sdk-v2.git
 cd duo-buildroot-sdk-v2
 git checkout v2.0.1                         # 6b03c27
-git am /path/to/duo256m-mainline-amp/patches/vendor-sdk/*.patch
+git am /path/to/duo256m-amp-rpmsg/patches/vendor-sdk/*.patch
 ```
 
 整串套在 v2.0.1 上之後，tree 與 `milkv_sdk@8fd17ca` 完全相同（已比對 tree hash）。
@@ -53,7 +53,7 @@ git -C threadx checkout 49ad38fbd540c9709e322abd38f520218e5beaf9   # 固定版�
 做法 B：
 
 ```sh
-git -C threadx am /path/to/duo256m-mainline-amp/patches/threadx/000[1-3]-*.patch
+git -C threadx am /path/to/duo256m-amp-rpmsg/patches/threadx/000[1-3]-*.patch
 ```
 
 - `0001`：開 mailbox 中斷之前先清掉殘留的狀態；
@@ -92,7 +92,7 @@ Makefile 只吃 duo-examples `envsetup.sh` 匯出的 `TOOLCHAIN_PREFIX` / `CFLAG
 ```sh
 git clone https://github.com/milkv-duo/duo-examples.git
 cd duo-examples && source envsetup.sh       # 選 2 (Duo256M) → 2 (RISCV64)
-make -C /path/to/duo256m-mainline-amp/bench/vendor-5.10
+make -C /path/to/duo256m-amp-rpmsg/bench/vendor-5.10
 ```
 
 | 工具 | 作者 | 用途 | 前提 |

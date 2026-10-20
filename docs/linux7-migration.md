@@ -1,7 +1,7 @@
 # Linux 7 移植
 
 > 執行人: Yu-Ting Wu (YTing46)
-> 完整程式碼與工程筆記: [duo256m-mainline-amp](https://github.com/YTing46/duo256m-mainline-amp)
+> 完整程式碼與工程筆記: [duo256m-amp-rpmsg](https://github.com/YTing46/duo256m-amp-rpmsg)
 
 ## 任務簡介
 
@@ -35,7 +35,7 @@
 | 小核韌體 | FreeRTOS | ThreadX + rpmsg-lite + resource table |
 
 kernel patch 系列（v7.0-rc6 起 24 個 patch，可完整重現）與韌體修改（7 個 patch）
-都在 [GitHub repo](https://github.com/YTing46/duo256m-mainline-amp) 的 `patches/`。
+都在 [GitHub repo](https://github.com/YTing46/duo256m-amp-rpmsg) 的 `patches/`。
 
 ## 量化結果
 
@@ -141,7 +141,7 @@ p99 178µs，反超手工 glue**。此改動需配套整條 rx 路徑的 irq-saf
 | 開機樂透式 mailbox 全聾 | 小核的 mailbox 中斷是 edge-latch：IRQ init 清 pending 時線還高，之後永遠沒有新 edge | 先 quiesce（把線壓低）再 unmask |
 
 每個 bug 的完整排查記錄（含被推翻的假設）見 repo 的
-[工程筆記](https://github.com/YTing46/duo256m-mainline-amp/blob/main/docs/rpmsg-debug-note.md)。
+[工程筆記](https://github.com/YTing46/duo256m-amp-rpmsg/blob/main/docs/rpmsg-debug-note.md)。
 
 ## 全 upstream 化的五層根因鏈（除錯方法論案例）
 
@@ -208,4 +208,4 @@ p99 178µs，反超手工 glue**。此改動需配套整條 rx 路徑的 irq-saf
 - [Jeremy Lu — vendor 5.10 RPMsg RTT 量測與分解](https://hackmd.io/ei4rzk-OQfOreOa5fG2eKQ)（vendor 5.10 延遲數據的出處）
 - [Junhui Liu — remoteproc: Add C906L controller for Sophgo CV1800B SoC (v2)](https://lore.kernel.org/linux-remoteproc/)
 - [milkv-duo/duo-buildroot-sdk-v2 v2.0.1](https://github.com/milkv-duo/duo-buildroot-sdk-v2/releases/tag/v2.0.1)（vendor 參考基線）
-- [本專題完整 repo：patches / 筆記 / 量測數據 / 板端腳本](https://github.com/YTing46/duo256m-mainline-amp)
+- [本專題完整 repo：patches / 筆記 / 量測數據 / 板端腳本](https://github.com/YTing46/duo256m-amp-rpmsg)

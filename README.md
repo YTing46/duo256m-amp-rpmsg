@@ -1,4 +1,4 @@
-# duo256m-mainline-amp
+# duo256m-amp-rpmsg
 
 Milk-V Duo256M（SG2002，雙 C906 AMP）的異質多核通訊機制移植：
 把 vendor 5.10 SDK 的 ThreadX + RPMsg + remoteproc 堆疊搬上 **mainline Linux 7.0-rc6**，
@@ -6,11 +6,12 @@ Milk-V Duo256M（SG2002，雙 C906 AMP）的異質多核通訊機制移植：
 
 本專題復刻並延伸 [HenryChaing 的「Linux 核心專題: 異質多核通訊機制」](https://hackmd.io/@sysprog/linux2025-projects)。
 
-本 repo 同時收錄 vendor 5.10 對照組：原本分散在
+本 repo 由三個專案合成，以 [YTing46/duo256m-mainline-amp](https://github.com/YTing46/duo256m-mainline-amp)
+的 mainline 移植為主線，併入 vendor 5.10 對照組：
 [jeremylu0830/milkv_sdk](https://github.com/jeremylu0830/milkv_sdk)（SDK 修改）與
 [jeremylu0830/duo-example-rtt](https://github.com/jeremylu0830/duo-example-rtt)（userspace 量測工具）
-的內容已併入 `patches/vendor-sdk/`、`bench/vendor-5.10/`，commit 歷史保留原作者署名。
-說明見 `docs/vendor-5.10-baseline.md`。
+的內容在 `patches/vendor-sdk/`、`bench/vendor-5.10/`。三者的 commit 歷史都保留原作者署名，
+原本的三個 repo 不受影響。vendor 對照組的說明見 `docs/vendor-5.10-baseline.md`。
 
 ## 成果總覽
 
@@ -162,7 +163,7 @@ ThreadX submodule 的兩個 commit 未公開；分段量測改用 `amp`（`49ad3
 
 | repo | 作者 | 併入位置 |
 |---|---|---|
-| [YTing46/duo256m-mainline-amp](https://github.com/YTing46/duo256m-mainline-amp)（主線） | YTing46 | 全部 mainline 內容 |
+| [YTing46/duo256m-mainline-amp](https://github.com/YTing46/duo256m-mainline-amp)（主線） | YTing46 | mainline 移植：`patches/linux`、`patches/threadx`、`bench/`、`board/`、`docs/`、`lore/` |
 | [jeremylu0830/milkv_sdk](https://github.com/jeremylu0830/milkv_sdk) | HenryChaing、Jeremy Lu | `patches/vendor-sdk/` |
 | [jeremylu0830/duo-example-rtt](https://github.com/jeremylu0830/duo-example-rtt) | HenryChaing、Jeremy Lu | `bench/vendor-5.10/`、`bench/data/vendor-5.10/` |
 
