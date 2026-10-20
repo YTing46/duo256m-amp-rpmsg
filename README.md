@@ -162,7 +162,7 @@ git -C duo-buildroot-sdk-v2 am "$PWD"/patches/vendor-sdk/*.patch
 make -C bench/vendor-5.10        # 須先 source duo-examples 的 envsetup.sh
 ```
 
-Jeremy Lu 使用的小核韌體修改未公開。如需分段量測，可改用 ThreadX `amp` 分支（49ad38f）加上
+如需分段量測，可改用 ThreadX `amp` 分支（49ad38f）加上
 `patches/threadx/0001–0003`，搭配 `bench/vendor-5.10/rpmsg_rtt_decomp4_stamp`。
 `0004–0007` 不適用於原廠 kernel，原因與細節見 `docs/vendor-5.10-baseline.md`。
 
